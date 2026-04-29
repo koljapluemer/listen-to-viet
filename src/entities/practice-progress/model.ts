@@ -1,0 +1,124 @@
+import * as ebisu from "ebisu-js";
+import type { Model } from "ebisu-js/interfaces";
+import type { Clip } from "../listening-clip/model";
+
+export interface StoredClip {
+  filename: string;
+  transcript: string;
+}
+
+export interface PracticeEvent {
+  eventType: "roundStarted" | "answer";
+  clip: StoredClip;
+  timestamp: string;
+  distractor?: string;
+  duration_ms?: number | null;
+  selectedTranscript?: string;
+  isCorrect?: boolean;
+}
+
+export interface LearningRecord {
+  clip: StoredClip;
+  model: Model;
+  timestamp: string;
+}
+
+export interface PracticeExportSnapshot {
+  exported_at: string;
+  learning_models: LearningRecord[];
+  event_log: PracticeEvent[];
+}
+
+export const cloneModel = (model: Model): Model => [...model] as Model;
+
+export const toStoredClip = (clip: Pick<Clip, "filename" | "transcript">): StoredClip => ({
+  filename: clip.filename,
+  transcript: clip.transcript,
+});
+
+export const cloneStoredClip = (clip: StoredClip): StoredClip => ({
+  filename: clip.filename,
+  transcript: clip.transcript,
+});
+
+export const clonePracticeEvent = (event: PracticeEvent): PracticeEvent => ({
+  eventType: event.eventType,
+  clip: cloneStoredClip(event.clip),
+  timestamp: event.timestamp,
+  distractor: event.distractor,
+  duration_ms: event.duration_ms,
+  selectedTranscript: event.selectedTranscript,
+  isCorrect: event.isCorrect,
+});
+
+export const cloneLearningRecord = (record: LearningRecord): LearningRecord => ({
+  clip: cloneStoredClip(record.clip),
+  model: cloneModel(record.model),
+  timestamp: record.timestamp,
+});
+
+export const getRecallProbability = (
+  record: Pick<LearningRecord, "model" | "timestamp">,
+  now = Date.now()
+) =>
+  ebisu.predictRecall(
+    record.model,
+    Math.floor((now - new Date(record.timestamp).getTime()) / 1000),
+    true
+  );
+
+export const getWeakestLearningRecord = <T extends Pick<LearningRecord, "model" | "timestamp">>(
+  records: T[],
+  now = Date.now()
+) => {
+  if (!records.length) {
+    return null;
+  }
+
+  let weakestRecord = records[0];
+  let lowestRecall = getRecallProbability(weakestRecord, now);
+
+  for (const record of records.slice(1)) {
+    const recall = getRecallProbability(record, now);
+
+    if (recall < lowestRecall) {
+      weakestRecord = record;
+      lowestRecall = recall;
+    }
+  }
+
+  return {
+    record: weakestRecord,
+    recall: lowestRecall,
+  };
+};
+
+export const createUpdatedLearningRecord = (
+  existingRecord: LearningRecord | null,
+  clip: StoredClip,
+  isCorrect: boolean,
+  now = new Date()
+): LearningRecord => {
+  const timestamp = now.toISOString();
+
+  if (!existingRecord) {
+    return {
+      clip: cloneStoredClip(clip),
+      model: cloneModel(ebisu.defaultModel(isCorrect ? 60 : 5)),
+      timestamp,
+    };
+  }
+
+  const elapsedTime = Math.max(
+    1,
+    Math.floor((now.getTime() - new Date(existingRecord.timestamp).getTime()) / 1000)
+  );
+
+  return {
+    clip: cloneStoredClip(clip),
+    model: cloneModel(
+      ebisu.updateRecall(existingRecord.model, isCorrect ? 0.95 : 0.05, 1, elapsedTime)
+    ),
+    timestamp,
+  };
+};

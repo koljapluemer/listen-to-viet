@@ -21,9 +21,7 @@ const vowelFamilies = [
   ["y", "ỳ", "ý", "ỷ", "ỹ", "ỵ"],
 ] as const;
 
-const consonantFamilies = [
-  ["d", "đ"],
-] as const;
+const consonantFamilies = [["d", "đ"]] as const;
 
 const confusableToneGroups = [
   [vowelFamilies[0], vowelFamilies[1], vowelFamilies[2]],
@@ -40,10 +38,13 @@ const alternativeMap = (() => {
   const map = new Map<string, Set<string>>();
 
   const addAlternative = (source: string, candidate: string) => {
-    if (source === candidate) return;
-    const bucket = map.get(source) ?? new Set<string>();
-    bucket.add(candidate);
-    map.set(source, bucket);
+    if (source === candidate) {
+      return;
+    }
+
+    const alternatives = map.get(source) ?? new Set<string>();
+    alternatives.add(candidate);
+    map.set(source, alternatives);
   };
 
   for (const family of vowelFamilies) {
@@ -57,10 +58,15 @@ const alternativeMap = (() => {
   for (const group of confusableToneGroups) {
     for (let familyIndex = 0; familyIndex < group.length; familyIndex += 1) {
       const family = group[familyIndex];
+
       for (let toneIndex = 0; toneIndex < family.length; toneIndex += 1) {
         const source = family[toneIndex];
+
         for (let otherFamilyIndex = 0; otherFamilyIndex < group.length; otherFamilyIndex += 1) {
-          if (otherFamilyIndex === familyIndex) continue;
+          if (otherFamilyIndex === familyIndex) {
+            continue;
+          }
+
           addAlternative(source, group[otherFamilyIndex][toneIndex]);
         }
       }
@@ -77,6 +83,7 @@ const alternativeMap = (() => {
 
   for (const [source, candidates] of [...map.entries()]) {
     const upperSource = source.toUpperCase();
+
     for (const candidate of candidates) {
       addAlternative(upperSource, candidate.toUpperCase());
     }
@@ -89,18 +96,17 @@ const alternativeMap = (() => {
 
 const shuffle = <T>(items: T[]): T[] => {
   const copy = [...items];
+
   for (let index = copy.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
   }
+
   return copy;
 };
 
 export const normalizeTranscript = (value: string) =>
-  value
-    .replace(transcriptCleanupPattern, " ")
-    .replace(wordSplitPattern, " ")
-    .trim();
+  value.replace(transcriptCleanupPattern, " ").replace(wordSplitPattern, " ").trim();
 
 export const countWords = (value: string) => {
   const normalized = normalizeTranscript(value);
@@ -126,6 +132,7 @@ export const generateDistractor = (transcript: string) => {
       const mutated = [...characters];
       mutated[characterIndex] = alternative;
       const candidate = mutated.join("");
+
       if (candidate !== transcript) {
         return candidate;
       }
@@ -142,12 +149,14 @@ export const parseTranscriptFile = (content: string, maxWords: number) =>
     .filter(Boolean)
     .map((line) => {
       const [filename, rawTranscript, timing] = line.split("|");
+
       if (!filename || rawTranscript === undefined || !timing) {
         return null;
       }
 
       const transcript = normalizeTranscript(rawTranscript);
-      const wordCount = transcript ? transcript.split(" ").length : 0;
+      const wordCount = countWords(transcript);
+
       if (!transcript || wordCount > maxWords || !canGenerateDistractor(transcript)) {
         return null;
       }
