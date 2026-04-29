@@ -46,6 +46,13 @@ export interface PracticeStatsSnapshot {
   tone: MatrixSummary;
 }
 
+export interface AccuracyTrialPoint {
+  trialNumber: number;
+  isCorrect: boolean;
+  rolling10: number;
+  rolling100: number;
+}
+
 interface PairCounts {
   attempts: number;
   correct: number;
@@ -258,6 +265,39 @@ export const getPracticeStatsSnapshot = (events: PracticeEvent[]): PracticeStats
     letter: toMatrixSummary("letter", LETTER_KEYS, buildPairCounts(trackedEvents, "letter")),
     tone: toMatrixSummary("tone", TONE_KEYS, buildPairCounts(trackedEvents, "tone")),
   };
+};
+
+export const getAccuracyTrialSeries = (events: PracticeEvent[], visibleWindow = 100) => {
+  const answerEvents = events.filter(
+    (event): event is PracticeEvent & { eventType: "answer"; isCorrect: boolean } =>
+      event.eventType === "answer" && typeof event.isCorrect === "boolean"
+  );
+  const trials: AccuracyTrialPoint[] = [];
+  let rolling10Correct = 0;
+  let rolling100Correct = 0;
+
+  answerEvents.forEach((event, index) => {
+    const value = event.isCorrect ? 1 : 0;
+    rolling10Correct += value;
+    rolling100Correct += value;
+
+    if (index >= 10) {
+      rolling10Correct -= answerEvents[index - 10].isCorrect ? 1 : 0;
+    }
+
+    if (index >= 100) {
+      rolling100Correct -= answerEvents[index - 100].isCorrect ? 1 : 0;
+    }
+
+    trials.push({
+      trialNumber: index + 1,
+      isCorrect: event.isCorrect,
+      rolling10: rolling10Correct / Math.min(index + 1, 10),
+      rolling100: rolling100Correct / Math.min(index + 1, 100),
+    });
+  });
+
+  return trials.slice(-visibleWindow);
 };
 
 export const chooseDistractorCandidate = (

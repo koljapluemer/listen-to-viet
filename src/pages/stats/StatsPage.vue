@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { LETTER_COMPARISON_GROUPS } from "../../entities/listening-clip/model";
+import PracticeAccuracyChart from "./PracticeAccuracyChart.vue";
 import PracticeStatsMatrix from "./PracticeStatsMatrix.vue";
 import { usePracticeStatsPage } from "./usePracticeStatsPage";
 
-const { loadError, loading, stats } = usePracticeStatsPage();
+const { accuracyTrials, loadError, loading, stats } = usePracticeStatsPage();
 
 const toneLabels: Record<string, string> = {
   ngang: "ngang · -",
@@ -79,6 +80,8 @@ const toneLabels: Record<string, string> = {
         </div>
 
         <template v-else-if="stats">
+          <PracticeAccuracyChart :trials="accuracyTrials" />
+
           <section class="space-y-4">
             <h2 class="text-xl font-semibold">
               Letter confusions
