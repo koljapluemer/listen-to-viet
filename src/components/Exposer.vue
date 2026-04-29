@@ -58,6 +58,7 @@ const audioRef = ref<HTMLAudioElement | null>(null);
 const taskStartTime = ref<number | null>(null);
 const autoplayHint = ref("");
 const loadError = ref("");
+const highlightChange = ref(false);
 
 const readStoredJson = <T>(key: string, fallback: T): T => {
   const rawValue = localStorage.getItem(key);
@@ -77,6 +78,21 @@ const storedLearningEntries = ref<StoredPracticeLearningEntry[]>(
 const learningEntries = ref<PracticeLearningEntry[]>([]);
 
 const answerOptions = computed(() => round.value?.options ?? []);
+const changedCharacterIndex = computed(() => {
+  if (!round.value) return -1;
+
+  const transcriptCharacters = [...round.value.clip.transcript];
+  const distractorCharacters = [...round.value.distractor];
+  const characterCount = Math.max(transcriptCharacters.length, distractorCharacters.length);
+
+  for (let index = 0; index < characterCount; index += 1) {
+    if (transcriptCharacters[index] !== distractorCharacters[index]) {
+      return index;
+    }
+  }
+
+  return -1;
+});
 
 const toStoredClip = (clip: Clip): StoredClip => ({
   filename: clip.filename,
@@ -317,6 +333,8 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
 });
+
+const splitLabel = (label: string) => [...label];
 </script>
 
 <template>
@@ -356,13 +374,22 @@ onUnmounted(() => {
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
+              <label class="col-span-full ml-auto inline-flex items-center gap-2 text-xs text-base-content/60">
+                <span>mark</span>
+                <input v-model="highlightChange" type="checkbox" class="toggle toggle-xs" />
+              </label>
+
               <button v-for="(option, index) in answerOptions" :key="`${round.clip.filename}-${index}-${option.label}`"
                 class="btn btn-2xl btn-outline h-auto flex-row items-center justify-between gap-3"
                 :disabled="disabledButtonIndex === index" @click="handleAnswer(option, index)">
                 <kbd class="kbd kbd-sm" v-if="index === 0">←</kbd>
 
-                <span class="text-2xl">
-                  {{ option.label }}
+                <span class="text-2xl whitespace-pre-wrap">
+                  <span v-for="(character, characterIndex) in splitLabel(option.label)"
+                    :key="`${option.label}-${characterIndex}`"
+                    :class="{ 'text-marker': highlightChange && characterIndex === changedCharacterIndex }">
+                    {{ character }}
+                  </span>
                 </span>
 
                 <kbd class="kbd kbd-sm" v-if="index !== 0">→</kbd>
