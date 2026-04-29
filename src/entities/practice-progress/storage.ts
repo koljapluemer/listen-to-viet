@@ -18,6 +18,15 @@ const toPracticeEventRow = (event: PracticeEvent): DbPracticeEventRow => ({
   duration_ms: event.duration_ms,
   selectedTranscript: event.selectedTranscript,
   isCorrect: event.isCorrect,
+  analyticsVersion: event.analyticsVersion,
+  changedIndex: event.changedIndex,
+  confusionKind: event.confusionKind,
+  correctCharacter: event.correctCharacter,
+  distractorCharacter: event.distractorCharacter,
+  correctLetter: event.correctLetter,
+  distractorLetter: event.distractorLetter,
+  correctTone: event.correctTone,
+  distractorTone: event.distractorTone,
 });
 
 const fromPracticeEventRow = (row: DbPracticeEventRow): PracticeEvent => ({
@@ -28,6 +37,15 @@ const fromPracticeEventRow = (row: DbPracticeEventRow): PracticeEvent => ({
   duration_ms: row.duration_ms,
   selectedTranscript: row.selectedTranscript,
   isCorrect: row.isCorrect,
+  analyticsVersion: row.analyticsVersion,
+  changedIndex: row.changedIndex,
+  confusionKind: row.confusionKind,
+  correctCharacter: row.correctCharacter,
+  distractorCharacter: row.distractorCharacter,
+  correctLetter: row.correctLetter,
+  distractorLetter: row.distractorLetter,
+  correctTone: row.correctTone,
+  distractorTone: row.distractorTone,
 });
 
 const toLearningRecordRow = (record: LearningRecord): DbLearningRecordRow => ({

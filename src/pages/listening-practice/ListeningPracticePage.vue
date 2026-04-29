@@ -25,9 +25,25 @@ void audioRef;
   <div class="min-h-screen bg-base-200">
     <header class="border-b border-base-300 bg-base-100">
       <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <p class="text-base font-semibold">
-          Listen to Viet
-        </p>
+        <div class="flex items-center gap-3">
+          <p class="text-base font-semibold">
+            Listen to Viet
+          </p>
+          <div class="join">
+            <RouterLink
+              to="/"
+              class="btn btn-sm join-item btn-active"
+            >
+              Practice
+            </RouterLink>
+            <RouterLink
+              to="/stats"
+              class="btn btn-sm join-item"
+            >
+              Stats
+            </RouterLink>
+          </div>
+        </div>
         <button
           class="btn btn-sm btn-outline"
           @click="exportProgress"

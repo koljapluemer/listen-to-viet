@@ -1,6 +1,12 @@
-import * as ebisu from "ebisu-js";
 import type { Model } from "ebisu-js/interfaces";
-import type { Clip } from "../listening-clip/model";
+import * as ebisu from "ebisu-js";
+import type {
+  Clip,
+  ConfusionKind,
+  DistractorCandidate,
+  LetterKey,
+  ToneKey,
+} from "../listening-clip/model";
 
 export interface StoredClip {
   filename: string;
@@ -15,6 +21,15 @@ export interface PracticeEvent {
   duration_ms?: number | null;
   selectedTranscript?: string;
   isCorrect?: boolean;
+  analyticsVersion?: 1;
+  changedIndex?: number;
+  confusionKind?: ConfusionKind;
+  correctCharacter?: string;
+  distractorCharacter?: string;
+  correctLetter?: LetterKey;
+  distractorLetter?: LetterKey;
+  correctTone?: ToneKey | null;
+  distractorTone?: ToneKey | null;
 }
 
 export interface LearningRecord {
@@ -41,6 +56,18 @@ export const cloneStoredClip = (clip: StoredClip): StoredClip => ({
   transcript: clip.transcript,
 });
 
+export const toPracticeEventAnalytics = (candidate: DistractorCandidate) => ({
+  analyticsVersion: 1 as const,
+  changedIndex: candidate.changedIndex,
+  confusionKind: candidate.kind,
+  correctCharacter: candidate.correctCharacter,
+  distractorCharacter: candidate.distractorCharacter,
+  correctLetter: candidate.correctLetter,
+  distractorLetter: candidate.distractorLetter,
+  correctTone: candidate.correctTone,
+  distractorTone: candidate.distractorTone,
+});
+
 export const clonePracticeEvent = (event: PracticeEvent): PracticeEvent => ({
   eventType: event.eventType,
   clip: cloneStoredClip(event.clip),
@@ -49,6 +76,15 @@ export const clonePracticeEvent = (event: PracticeEvent): PracticeEvent => ({
   duration_ms: event.duration_ms,
   selectedTranscript: event.selectedTranscript,
   isCorrect: event.isCorrect,
+  analyticsVersion: event.analyticsVersion,
+  changedIndex: event.changedIndex,
+  confusionKind: event.confusionKind,
+  correctCharacter: event.correctCharacter,
+  distractorCharacter: event.distractorCharacter,
+  correctLetter: event.correctLetter,
+  distractorLetter: event.distractorLetter,
+  correctTone: event.correctTone,
+  distractorTone: event.distractorTone,
 });
 
 export const cloneLearningRecord = (record: LearningRecord): LearningRecord => ({

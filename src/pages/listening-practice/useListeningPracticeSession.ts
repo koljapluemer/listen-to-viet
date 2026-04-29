@@ -2,22 +2,26 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import type { Model } from "ebisu-js/interfaces";
 import {
   type Clip,
-  generateDistractor,
+  type DistractorCandidate,
+  listDistractorCandidates,
   parseTranscriptFile,
 } from "../../entities/listening-clip/model";
 import {
   appendPracticeEvent,
   listLearningRecords,
+  listPracticeEvents,
   readPracticeExportSnapshot,
   saveLearningRecord,
 } from "../../entities/practice-progress/storage";
 import {
   createUpdatedLearningRecord,
   getWeakestLearningRecord,
+  toPracticeEventAnalytics,
   toStoredClip,
   type LearningRecord,
   type PracticeEvent,
 } from "../../entities/practice-progress/model";
+import { chooseDistractorCandidate } from "../../entities/practice-progress/stats";
 
 export interface AnswerOption {
   label: string;
@@ -26,7 +30,7 @@ export interface AnswerOption {
 
 interface Round {
   clip: Clip;
-  distractor: string;
+  candidate: DistractorCandidate;
   options: AnswerOption[];
 }
 
@@ -67,6 +71,7 @@ const downloadJson = (payload: unknown, filename: string) => {
 
 export const useListeningPracticeSession = () => {
   const clips = ref<Clip[]>([]);
+  const practiceEvents = ref<PracticeEvent[]>([]);
   const learningRecords = ref<SessionLearningRecord[]>([]);
   const round = ref<Round | null>(null);
   const phase = ref<Phase>("loading");
@@ -78,39 +83,24 @@ export const useListeningPracticeSession = () => {
   const highlightChange = ref(false);
 
   const answerOptions = computed(() => round.value?.options ?? []);
-  const changedCharacterIndex = computed(() => {
-    if (!round.value) {
-      return -1;
-    }
-
-    const transcriptCharacters = [...round.value.clip.transcript];
-    const distractorCharacters = [...round.value.distractor];
-    const characterCount = Math.max(transcriptCharacters.length, distractorCharacters.length);
-
-    for (let index = 0; index < characterCount; index += 1) {
-      if (transcriptCharacters[index] !== distractorCharacters[index]) {
-        return index;
-      }
-    }
-
-    return -1;
-  });
+  const changedCharacterIndex = computed(() => round.value?.candidate.changedIndex ?? -1);
 
   const splitLabel = (label: string) => [...label];
 
   const createRound = (clip: Clip): Round | null => {
-    const distractor = generateDistractor(clip.transcript);
+    const candidates = listDistractorCandidates(clip.transcript);
+    const candidate = chooseDistractorCandidate(candidates, practiceEvents.value);
 
-    if (!distractor) {
+    if (!candidate) {
       return null;
     }
 
     return {
       clip,
-      distractor,
+      candidate,
       options: shuffle([
         { label: clip.transcript, isCorrect: true },
-        { label: distractor, isCorrect: false },
+        { label: candidate.label, isCorrect: false },
       ]),
     };
   };
@@ -178,10 +168,11 @@ export const useListeningPracticeSession = () => {
       eventType: "roundStarted",
       clip: toStoredClip(nextRound.clip),
       timestamp: new Date().toISOString(),
-      distractor: nextRound.distractor,
+      distractor: nextRound.candidate.label,
     };
 
     await appendPracticeEvent(roundStartedEvent);
+    practiceEvents.value.push(roundStartedEvent);
 
     phase.value = "ready";
     taskStartTime.value = Date.now();
@@ -235,13 +226,15 @@ export const useListeningPracticeSession = () => {
         eventType: "answer",
         clip: toStoredClip(round.value.clip),
         timestamp: new Date().toISOString(),
-        distractor: round.value.distractor,
+        distractor: round.value.candidate.label,
         duration_ms: taskStartTime.value === null ? null : Date.now() - taskStartTime.value,
         selectedTranscript: option.label,
         isCorrect: option.isCorrect,
+        ...toPracticeEventAnalytics(round.value.candidate),
       };
 
       await appendPracticeEvent(answerEvent);
+      practiceEvents.value.push(answerEvent);
       await storeUpdatedLearningRecord(round.value.clip, option.isCorrect);
     }
 
@@ -294,9 +287,13 @@ export const useListeningPracticeSession = () => {
     const transcriptText = await transcriptResponse.text();
     const parsedClips = parseTranscriptFile(transcriptText, MAX_WORDS);
     const clipsByFilename = new Map(parsedClips.map((clip) => [clip.filename, clip]));
-    const storedLearningRecords = await listLearningRecords();
+    const [storedLearningRecords, storedPracticeEvents] = await Promise.all([
+      listLearningRecords(),
+      listPracticeEvents(),
+    ]);
 
     clips.value = parsedClips;
+    practiceEvents.value = storedPracticeEvents;
     learningRecords.value = storedLearningRecords
       .map((record) => {
         const clip = clipsByFilename.get(record.clip.filename);

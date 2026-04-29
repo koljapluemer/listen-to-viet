@@ -6,6 +6,54 @@ export interface Clip {
   wordCount: number;
 }
 
+export const LETTER_KEYS = [
+  "a",
+  "ă",
+  "â",
+  "e",
+  "ê",
+  "i",
+  "o",
+  "ô",
+  "ơ",
+  "u",
+  "ư",
+  "y",
+  "d",
+  "đ",
+] as const;
+
+export const TONE_KEYS = ["ngang", "huyen", "sac", "hoi", "nga", "nang"] as const;
+export const LETTER_COMPARISON_GROUPS = [
+  ["a", "ă", "â"],
+  ["e", "ê"],
+  ["i", "y"],
+  ["o", "ô", "ơ"],
+  ["u", "ư"],
+  ["d", "đ"],
+] as const;
+
+export type LetterKey = (typeof LETTER_KEYS)[number];
+export type ToneKey = (typeof TONE_KEYS)[number];
+export type ConfusionKind = "letter" | "tone";
+
+export interface DistractorCandidate {
+  label: string;
+  changedIndex: number;
+  correctCharacter: string;
+  distractorCharacter: string;
+  kind: ConfusionKind;
+  correctLetter: LetterKey;
+  distractorLetter: LetterKey;
+  correctTone: ToneKey | null;
+  distractorTone: ToneKey | null;
+}
+
+interface CharacterMetadata {
+  letter: LetterKey;
+  tone: ToneKey | null;
+}
+
 const vowelFamilies = [
   ["a", "à", "á", "ả", "ã", "ạ"],
   ["ă", "ằ", "ắ", "ẳ", "ẵ", "ặ"],
@@ -19,9 +67,9 @@ const vowelFamilies = [
   ["u", "ù", "ú", "ủ", "ũ", "ụ"],
   ["ư", "ừ", "ứ", "ử", "ữ", "ự"],
   ["y", "ỳ", "ý", "ỷ", "ỹ", "ỵ"],
-] as const;
+] as const satisfies readonly (readonly string[])[];
 
-const consonantFamilies = [["d", "đ"]] as const;
+const consonantFamilies = [["d", "đ"]] as const satisfies readonly (readonly string[])[];
 
 const confusableToneGroups = [
   [vowelFamilies[0], vowelFamilies[1], vowelFamilies[2]],
@@ -33,6 +81,36 @@ const confusableToneGroups = [
 
 const transcriptCleanupPattern = /(^|\s)-N(?=\s|$)/g;
 const wordSplitPattern = /\s+/;
+
+const characterMetadataMap = (() => {
+  const map = new Map<string, CharacterMetadata>();
+
+  for (const family of vowelFamilies) {
+    const letter = family[0] as LetterKey;
+
+    family.forEach((character, toneIndex) => {
+      map.set(character, {
+        letter,
+        tone: TONE_KEYS[toneIndex],
+      });
+    });
+  }
+
+  consonantFamilies.forEach((family) => {
+    family.forEach((character) => {
+      map.set(character, {
+        letter: character as LetterKey,
+        tone: null,
+      });
+    });
+  });
+
+  for (const [character, metadata] of [...map.entries()]) {
+    map.set(character.toUpperCase(), metadata);
+  }
+
+  return map;
+})();
 
 const alternativeMap = (() => {
   const map = new Map<string, Set<string>>();
@@ -105,6 +183,23 @@ const shuffle = <T>(items: T[]): T[] => {
   return copy;
 };
 
+const getCharacterMetadata = (character: string) => characterMetadataMap.get(character) ?? null;
+
+const getConfusionKind = (
+  sourceMetadata: CharacterMetadata,
+  candidateMetadata: CharacterMetadata
+): ConfusionKind | null => {
+  if (sourceMetadata.letter !== candidateMetadata.letter) {
+    return "letter";
+  }
+
+  if (sourceMetadata.tone !== null && candidateMetadata.tone !== null) {
+    return "tone";
+  }
+
+  return null;
+};
+
 export const normalizeTranscript = (value: string) =>
   value.replace(transcriptCleanupPattern, " ").replace(wordSplitPattern, " ").trim();
 
@@ -116,31 +211,58 @@ export const countWords = (value: string) => {
 export const canGenerateDistractor = (transcript: string) =>
   [...normalizeTranscript(transcript)].some((character) => alternativeMap.has(character));
 
-export const generateDistractor = (transcript: string) => {
-  const characters = [...normalizeTranscript(transcript)];
-  const candidateIndexes = shuffle(
-    characters
-      .map((character, index) => (alternativeMap.has(character) ? index : -1))
-      .filter((index) => index !== -1)
-  );
+export const listDistractorCandidates = (transcript: string) => {
+  const normalizedTranscript = normalizeTranscript(transcript);
+  const characters = [...normalizedTranscript];
+  const candidates: DistractorCandidate[] = [];
 
-  for (const characterIndex of candidateIndexes) {
-    const originalCharacter = characters[characterIndex];
-    const alternatives = shuffle(alternativeMap.get(originalCharacter) ?? []);
+  characters.forEach((character, changedIndex) => {
+    const sourceMetadata = getCharacterMetadata(character);
+    const alternatives = alternativeMap.get(character);
 
-    for (const alternative of alternatives) {
-      const mutated = [...characters];
-      mutated[characterIndex] = alternative;
-      const candidate = mutated.join("");
-
-      if (candidate !== transcript) {
-        return candidate;
-      }
+    if (!sourceMetadata || !alternatives?.length) {
+      return;
     }
-  }
 
-  return null;
+    alternatives.forEach((alternative) => {
+      const candidateMetadata = getCharacterMetadata(alternative);
+
+      if (!candidateMetadata) {
+        return;
+      }
+
+      const kind = getConfusionKind(sourceMetadata, candidateMetadata);
+
+      if (!kind) {
+        return;
+      }
+
+      const mutated = [...characters];
+      mutated[changedIndex] = alternative;
+      const label = mutated.join("");
+
+      if (label === normalizedTranscript) {
+        return;
+      }
+
+      candidates.push({
+        label,
+        changedIndex,
+        correctCharacter: character,
+        distractorCharacter: alternative,
+        kind,
+        correctLetter: sourceMetadata.letter,
+        distractorLetter: candidateMetadata.letter,
+        correctTone: sourceMetadata.tone,
+        distractorTone: candidateMetadata.tone,
+      });
+    });
+  });
+
+  return shuffle(candidates);
 };
+
+export const generateDistractor = (transcript: string) => listDistractorCandidates(transcript)[0]?.label ?? null;
 
 export const parseTranscriptFile = (content: string, maxWords: number) =>
   content
