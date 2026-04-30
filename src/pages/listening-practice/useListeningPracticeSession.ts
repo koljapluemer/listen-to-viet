@@ -45,6 +45,7 @@ type Phase = "loading" | "ready" | "wrong";
 const MAX_WORDS = 5;
 const REVIEW_THRESHOLD = 0.7;
 const REVIEW_PROBABILITY = 0.8;
+const INTERACTIVE_TAG_NAMES = new Set(["A", "AUDIO", "BUTTON", "INPUT", "SELECT", "TEXTAREA"]);
 
 const shuffle = <T>(items: T[]) => {
   const copy = [...items];
@@ -86,6 +87,14 @@ export const useListeningPracticeSession = () => {
   const changedCharacterIndex = computed(() => round.value?.candidate.changedIndex ?? -1);
 
   const splitLabel = (label: string) => [...label];
+
+  const isInteractiveShortcutTarget = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return target.isContentEditable || INTERACTIVE_TAG_NAMES.has(target.tagName);
+  };
 
   const createRound = (clip: Clip): Round | null => {
     const candidates = listDistractorCandidates(clip.transcript);
@@ -250,6 +259,16 @@ export const useListeningPracticeSession = () => {
 
   const handleKeydown = (event: KeyboardEvent) => {
     if (phase.value !== "ready" && phase.value !== "wrong") {
+      return;
+    }
+
+    if (event.code === "Space") {
+      if (isInteractiveShortcutTarget(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      void replayAudio();
       return;
     }
 
