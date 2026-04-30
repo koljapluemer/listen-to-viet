@@ -10,6 +10,11 @@ const {
   disabledButtonIndex,
   exportProgress,
   handleAnswer,
+  handleAudioEnded,
+  handleAudioPause,
+  handleAudioPlay,
+  handleAudioSeek,
+  handleAudioTimeUpdate,
   highlightChange,
   loadError,
   phase,
@@ -102,6 +107,11 @@ void audioRef;
                     preload="auto"
                     controls
                     autoplay
+                    @ended="handleAudioEnded"
+                    @pause="handleAudioPause"
+                    @play="handleAudioPlay"
+                    @seeking="handleAudioSeek"
+                    @timeupdate="handleAudioTimeUpdate"
                   />
 
                   <div

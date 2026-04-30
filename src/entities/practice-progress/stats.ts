@@ -42,6 +42,8 @@ export interface MatrixSummary {
 }
 
 export interface PracticeStatsSnapshot {
+  overview: PracticeOverviewStats;
+  dailyExercises: DailyExercisePoint[];
   letter: MatrixSummary;
   tone: MatrixSummary;
 }
@@ -51,6 +53,16 @@ export interface AccuracyTrialPoint {
   isCorrect: boolean;
   rolling10: number;
   rolling100: number;
+}
+
+export interface PracticeOverviewStats {
+  totalExercises: number;
+  totalListeningMs: number;
+}
+
+export interface DailyExercisePoint {
+  day: string;
+  exercises: number;
 }
 
 interface PairCounts {
@@ -64,6 +76,25 @@ interface TrackedAnswerEvent extends PracticeEvent {
   confusionKind: ConfusionKind;
   isCorrect: boolean;
 }
+
+interface AnswerEvent extends PracticeEvent {
+  eventType: "answer";
+}
+
+interface AccuracyAnswerEvent extends AnswerEvent {
+  isCorrect: boolean;
+}
+
+interface AudioListenedEvent extends PracticeEvent {
+  eventType: "audioListened";
+  duration_ms: number;
+}
+
+const LOCAL_DAY_PARTS_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
 
 export const calculatePosteriorAccuracy = (correct: number, attempts: number) =>
   (correct + BETA_PRIOR_ALPHA) / (attempts + BETA_PRIOR_ALPHA + BETA_PRIOR_BETA);
@@ -79,6 +110,63 @@ const getTrackedAnswerEvents = (events: PracticeEvent[]) =>
       typeof event.isCorrect === "boolean" &&
       !!event.confusionKind
   );
+
+const getAnswerEvents = (events: PracticeEvent[]) =>
+  events.filter((event): event is AnswerEvent => event.eventType === "answer");
+
+const getAccuracyAnswerEvents = (events: PracticeEvent[]) =>
+  events.filter(
+    (event): event is AccuracyAnswerEvent =>
+      event.eventType === "answer" && typeof event.isCorrect === "boolean"
+  );
+
+const getAudioListenedEvents = (events: PracticeEvent[]) =>
+  events.filter(
+    (event): event is AudioListenedEvent =>
+      event.eventType === "audioListened" &&
+      typeof event.duration_ms === "number" &&
+      Number.isFinite(event.duration_ms) &&
+      event.duration_ms > 0
+  );
+
+const getLocalDayKey = (timestamp: string) => {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return timestamp.slice(0, 10);
+  }
+
+  const parts = LOCAL_DAY_PARTS_FORMATTER.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+
+  return `${year}-${month}-${day}`;
+};
+
+const getDailyExerciseSeries = (events: AnswerEvent[]): DailyExercisePoint[] => {
+  const counts = new Map<string, number>();
+
+  events.forEach((event) => {
+    const day = getLocalDayKey(event.timestamp);
+    counts.set(day, (counts.get(day) ?? 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .sort(([leftDay], [rightDay]) => leftDay.localeCompare(rightDay))
+    .map(([day, exercises]) => ({
+      day,
+      exercises,
+    }));
+};
+
+const getPracticeOverview = (
+  answerEvents: AnswerEvent[],
+  audioListenedEvents: AudioListenedEvent[]
+): PracticeOverviewStats => ({
+  totalExercises: answerEvents.length,
+  totalListeningMs: audioListenedEvents.reduce((sum, event) => sum + event.duration_ms, 0),
+});
 
 const buildPairCounts = (events: TrackedAnswerEvent[], kind: ConfusionKind) => {
   const counts = new Map<string, PairCounts>();
@@ -259,19 +347,20 @@ const getCandidateScore = (
 };
 
 export const getPracticeStatsSnapshot = (events: PracticeEvent[]): PracticeStatsSnapshot => {
+  const answerEvents = getAnswerEvents(events);
   const trackedEvents = getTrackedAnswerEvents(events);
+  const audioListenedEvents = getAudioListenedEvents(events);
 
   return {
+    overview: getPracticeOverview(answerEvents, audioListenedEvents),
+    dailyExercises: getDailyExerciseSeries(answerEvents),
     letter: toMatrixSummary("letter", LETTER_KEYS, buildPairCounts(trackedEvents, "letter")),
     tone: toMatrixSummary("tone", TONE_KEYS, buildPairCounts(trackedEvents, "tone")),
   };
 };
 
 export const getAccuracyTrialSeries = (events: PracticeEvent[], visibleWindow = 100) => {
-  const answerEvents = events.filter(
-    (event): event is PracticeEvent & { eventType: "answer"; isCorrect: boolean } =>
-      event.eventType === "answer" && typeof event.isCorrect === "boolean"
-  );
+  const answerEvents = getAccuracyAnswerEvents(events);
   const trials: AccuracyTrialPoint[] = [];
   let rolling10Correct = 0;
   let rolling100Correct = 0;

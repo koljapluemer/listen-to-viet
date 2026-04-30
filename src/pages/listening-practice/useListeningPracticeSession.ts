@@ -79,6 +79,10 @@ export const useListeningPracticeSession = () => {
   const disabledButtonIndex = ref<number | null>(null);
   const audioRef = ref<HTMLAudioElement | null>(null);
   const taskStartTime = ref<number | null>(null);
+  const currentListeningMs = ref(0);
+  const currentListeningClip = ref<ReturnType<typeof toStoredClip> | null>(null);
+  const currentListeningDistractor = ref<string | undefined>(undefined);
+  const lastAudioPositionSeconds = ref<number | null>(null);
   const autoplayHint = ref("");
   const loadError = ref("");
   const highlightChange = ref(false);
@@ -144,6 +148,88 @@ export const useListeningPracticeSession = () => {
     } catch {
       autoplayHint.value = "Autoplay was blocked. Press replay.";
     }
+  };
+
+  const resetAudioPlaybackTracking = () => {
+    currentListeningMs.value = 0;
+    currentListeningClip.value = null;
+    currentListeningDistractor.value = undefined;
+    lastAudioPositionSeconds.value = null;
+  };
+
+  const updateCurrentListeningMs = () => {
+    const audio = audioRef.value;
+
+    if (!audio || lastAudioPositionSeconds.value === null) {
+      return;
+    }
+
+    const progressedSeconds = audio.currentTime - lastAudioPositionSeconds.value;
+
+    if (progressedSeconds > 0) {
+      currentListeningMs.value += progressedSeconds * 1000;
+    }
+
+    lastAudioPositionSeconds.value = audio.currentTime;
+  };
+
+  const handleAudioPlay = () => {
+    const audio = audioRef.value;
+
+    if (!audio || !round.value || lastAudioPositionSeconds.value !== null) {
+      return;
+    }
+
+    currentListeningClip.value = toStoredClip(round.value.clip);
+    currentListeningDistractor.value = round.value.candidate.label;
+    lastAudioPositionSeconds.value = audio.currentTime;
+  };
+
+  const handleAudioTimeUpdate = () => {
+    updateCurrentListeningMs();
+  };
+
+  const handleAudioSeek = () => {
+    const audio = audioRef.value;
+
+    if (!audio || lastAudioPositionSeconds.value === null) {
+      return;
+    }
+
+    lastAudioPositionSeconds.value = audio.currentTime;
+  };
+
+  const finalizeAudioPlaybackTracking = async () => {
+    updateCurrentListeningMs();
+
+    const listenedDurationMs = Math.round(currentListeningMs.value);
+    const clip = currentListeningClip.value;
+    const distractor = currentListeningDistractor.value;
+
+    resetAudioPlaybackTracking();
+
+    if (!clip || listenedDurationMs < 250) {
+      return;
+    }
+
+    const audioListenedEvent: PracticeEvent = {
+      eventType: "audioListened",
+      clip,
+      timestamp: new Date().toISOString(),
+      distractor,
+      duration_ms: listenedDurationMs,
+    };
+
+    await appendPracticeEvent(audioListenedEvent);
+    practiceEvents.value.push(audioListenedEvent);
+  };
+
+  const handleAudioPause = () => {
+    void finalizeAudioPlaybackTracking();
+  };
+
+  const handleAudioEnded = () => {
+    void finalizeAudioPlaybackTracking();
   };
 
   const setNextRound = async () => {
@@ -347,6 +433,7 @@ export const useListeningPracticeSession = () => {
 
   onUnmounted(() => {
     window.removeEventListener("keydown", handleKeydown);
+    void finalizeAudioPlaybackTracking();
   });
 
   return {
@@ -357,6 +444,11 @@ export const useListeningPracticeSession = () => {
     disabledButtonIndex,
     exportProgress,
     handleAnswer,
+    handleAudioEnded,
+    handleAudioPause,
+    handleAudioPlay,
+    handleAudioSeek,
+    handleAudioTimeUpdate,
     highlightChange,
     loadError,
     phase,

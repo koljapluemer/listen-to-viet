@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { LETTER_COMPARISON_GROUPS } from "../../entities/listening-clip/model";
 import PracticeAccuracyChart from "./PracticeAccuracyChart.vue";
+import PracticeDailyVolumeChart from "./PracticeDailyVolumeChart.vue";
 import PracticeStatsMatrix from "./PracticeStatsMatrix.vue";
 import { usePracticeStatsPage } from "./usePracticeStatsPage";
 
@@ -13,6 +15,27 @@ const toneLabels: Record<string, string> = {
   hoi: "hỏi · ?",
   nga: "ngã · ~",
   nang: "nặng · .",
+};
+
+const trackedConfusionAttempts = computed(
+  () => (stats.value ? stats.value.letter.attempts + stats.value.tone.attempts : 0)
+);
+
+const formatDuration = (durationMs: number) => {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+
+  return `${seconds}s`;
 };
 </script>
 
@@ -68,7 +91,7 @@ const toneLabels: Record<string, string> = {
         </div>
 
         <div
-          v-else-if="stats && stats.letter.attempts + stats.tone.attempts === 0"
+          v-else-if="stats && stats.overview.totalExercises === 0"
           class="rounded-box border border-base-300 bg-base-100 p-6"
         >
           <h2 class="text-lg font-semibold">
@@ -80,9 +103,36 @@ const toneLabels: Record<string, string> = {
         </div>
 
         <template v-else-if="stats">
+          <section class="rounded-box border border-base-300 bg-base-100 p-4">
+            <div class="stats stats-vertical w-full border border-base-300 bg-base-200 shadow-sm sm:stats-horizontal">
+              <div class="stat">
+                <div class="stat-title">
+                  Exercises completed
+                </div>
+                <div class="stat-value text-primary">
+                  {{ stats.overview.totalExercises }}
+                </div>
+              </div>
+
+              <div class="stat">
+                <div class="stat-title">
+                  Audio listening time
+                </div>
+                <div class="stat-value text-secondary">
+                  {{ formatDuration(stats.overview.totalListeningMs) }}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <PracticeDailyVolumeChart :days="stats.dailyExercises" />
+
           <PracticeAccuracyChart :trials="accuracyTrials" />
 
-          <section class="space-y-4">
+          <section
+            v-if="trackedConfusionAttempts > 0"
+            class="space-y-4"
+          >
             <h2 class="text-xl font-semibold">
               Letter confusions
             </h2>
@@ -96,13 +146,26 @@ const toneLabels: Record<string, string> = {
                 :keys="[...group]"
               />
             </div>
+
+            <PracticeStatsMatrix
+              title="Tone confusions"
+              :summary="stats.tone"
+              :format-key="(key) => toneLabels[key] ?? key"
+            />
           </section>
 
-          <PracticeStatsMatrix
-            title="Tone confusions"
-            :summary="stats.tone"
-            :format-key="(key) => toneLabels[key] ?? key"
-          />
+          <section
+            v-else
+            class="rounded-box border border-base-300 bg-base-100 p-6"
+          >
+            <h2 class="text-lg font-semibold">
+              Confusion stats need newer attempts
+            </h2>
+            <p class="mt-2 text-sm text-base-content/70">
+              Exercise totals and listening time are available, but the confusion matrices only
+              populate from analytics-enabled attempts.
+            </p>
+          </section>
         </template>
       </section>
     </main>

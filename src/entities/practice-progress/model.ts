@@ -14,7 +14,7 @@ export interface StoredClip {
 }
 
 export interface PracticeEvent {
-  eventType: "roundStarted" | "answer";
+  eventType: "roundStarted" | "answer" | "audioListened";
   clip: StoredClip;
   timestamp: string;
   distractor?: string;

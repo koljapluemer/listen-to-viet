@@ -11,7 +11,7 @@ export interface DbStoredClip {
 
 export interface DbPracticeEventRow {
   id?: number;
-  eventType: "roundStarted" | "answer";
+  eventType: "roundStarted" | "answer" | "audioListened";
   clip: DbStoredClip;
   timestamp: string;
   distractor?: string;
