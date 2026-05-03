@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import {
-  calculatePosteriorAccuracy,
-  type MatrixCellStats,
-  type MatrixSummary,
-  type MatrixTopPair,
-} from "../../entities/practice-progress/stats";
+import { type MatrixCellStats, type MatrixSummary, type MatrixTopPair } from "../../entities/practice-progress/stats";
 
 const props = defineProps<{
   title: string;
@@ -26,23 +21,29 @@ const visibleRows = computed(() =>
 const columnKeys = computed(() => visibleRows.value[0]?.cells.map((cell) => cell.distractorKey) ?? []);
 const visibleCells = computed(() =>
   visibleRows.value.flatMap((row) =>
-    row.cells.filter((cell) => cell.correctKey !== cell.distractorKey && cell.posteriorAccuracy !== null)
+    row.cells.filter((cell) => cell.correctKey !== cell.distractorKey && cell.recentAccuracy !== null)
   )
 );
 const attempts = computed(() =>
   visibleCells.value.reduce((total, cell) => total + cell.attempts, 0)
 );
-const correct = computed(() => visibleCells.value.reduce((total, cell) => total + cell.correct, 0));
-const posteriorAccuracy = computed(() =>
-  attempts.value ? calculatePosteriorAccuracy(correct.value, attempts.value) : null
+const recentAttempts = computed(() =>
+  visibleCells.value.reduce((total, cell) => total + cell.recentAttempts, 0)
+);
+const recentCorrect = computed(() =>
+  visibleCells.value.reduce((total, cell) => total + cell.recentCorrect, 0)
 );
 const distinctPairs = computed(() => visibleCells.value.length);
 const topPairs = computed<MatrixTopPair[]>(() =>
   [...visibleCells.value]
     .filter((cell) => cell.attempts >= 3)
     .sort((left, right) => {
-      if (left.posteriorAccuracy !== right.posteriorAccuracy) {
-        return left.posteriorAccuracy! - right.posteriorAccuracy!;
+      if (left.recentAccuracy !== right.recentAccuracy) {
+        return left.recentAccuracy! - right.recentAccuracy!;
+      }
+
+      if (left.recentAttempts !== right.recentAttempts) {
+        return right.recentAttempts - left.recentAttempts;
       }
 
       return right.attempts - left.attempts;
@@ -52,7 +53,9 @@ const topPairs = computed<MatrixTopPair[]>(() =>
       label: `${formatKeyLabel(cell.correctKey)} -> ${formatKeyLabel(cell.distractorKey)}`,
       attempts: cell.attempts,
       correct: cell.correct,
-      posteriorAccuracy: cell.posteriorAccuracy!,
+      recentAttempts: cell.recentAttempts,
+      recentCorrect: cell.recentCorrect,
+      recentAccuracy: cell.recentAccuracy!,
     }))
 );
 
@@ -67,23 +70,25 @@ const formatPercent = (value: number | null) => {
 const formatKeyLabel = (key: string) => props.formatKey?.(key) ?? key;
 
 const getTooltip = (cell: MatrixCellStats) => {
-  if (cell.posteriorAccuracy === null) {
+  if (cell.recentAccuracy === null) {
     return "No tracked attempts yet";
   }
 
   return [
     `${formatKeyLabel(cell.correctKey)} vs ${formatKeyLabel(cell.distractorKey)}`,
-    `${cell.correct}/${cell.attempts} correct`,
+    `Last ${cell.recentAttempts}: ${cell.recentCorrect}/${cell.recentAttempts} correct`,
+    `Recent accuracy ${formatPercent(cell.recentAccuracy)}`,
+    `Lifetime: ${cell.correct}/${cell.attempts} correct`,
     `Bayesian mean ${formatPercent(cell.posteriorAccuracy)}`,
   ].join("\n");
 };
 
 const getCellStyle = (cell: MatrixCellStats) => {
-  if (cell.posteriorAccuracy === null || cell.correctKey === cell.distractorKey) {
+  if (cell.recentAccuracy === null || cell.correctKey === cell.distractorKey) {
     return {};
   }
 
-  const hue = cell.posteriorAccuracy * 120;
+  const hue = cell.recentAccuracy * 120;
   const alpha = Math.min(0.22 + Math.log(cell.attempts + 1) / 4, 0.82);
 
   return {
@@ -104,10 +109,10 @@ const getCellStyle = (cell: MatrixCellStats) => {
       <div class="stats stats-vertical border border-base-300 bg-base-100 shadow-sm sm:stats-horizontal">
         <div class="stat px-4 py-3">
           <div class="stat-title text-xs">
-            Accuracy
+            Recent accuracy
           </div>
           <div class="stat-value text-xl">
-            {{ formatPercent(posteriorAccuracy) }}
+            {{ formatPercent(recentAttempts ? recentCorrect / recentAttempts : null) }}
           </div>
         </div>
         <div class="stat px-4 py-3">
@@ -164,8 +169,8 @@ const getCellStyle = (cell: MatrixCellStats) => {
             :style="getCellStyle(cell)"
           >
             <div class="flex h-full flex-col items-center justify-center gap-1">
-              <span class="text-sm font-semibold sm:text-base">{{ formatPercent(cell.posteriorAccuracy) }}</span>
-              <span class="text-[11px] text-base-content/70">n={{ cell.attempts }}</span>
+              <span class="text-sm font-semibold sm:text-base">{{ formatPercent(cell.recentAccuracy) }}</span>
+              <span class="text-[11px] text-base-content/70">last {{ cell.recentAttempts }}</span>
             </div>
           </div>
         </template>
@@ -187,7 +192,7 @@ const getCellStyle = (cell: MatrixCellStats) => {
         >
           <span>{{ pair.label }}</span>
           <span class="text-base-content/70">
-            {{ formatPercent(pair.posteriorAccuracy) }} · n={{ pair.attempts }}
+            {{ formatPercent(pair.recentAccuracy) }} · last {{ pair.recentAttempts }}
           </span>
         </div>
       </div>

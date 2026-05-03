@@ -9,12 +9,12 @@ import { usePracticeStatsPage } from "./usePracticeStatsPage";
 const { accuracyTrials, exportTrackedData, loadError, loading, stats } = usePracticeStatsPage();
 
 const toneLabels: Record<string, string> = {
-  ngang: "ngang · -",
-  huyen: "huyền · `",
-  sac: "sắc · /",
-  hoi: "hỏi · ?",
-  nga: "ngã · ~",
-  nang: "nặng · .",
+  ngang: "ngang | -",
+  huyen: "huyền | `",
+  sac: "sắc | /",
+  hoi: "hỏi | ?",
+  nga: "ngã | ~",
+  nang: "nặng | .",
 };
 
 const trackedConfusionAttempts = computed(

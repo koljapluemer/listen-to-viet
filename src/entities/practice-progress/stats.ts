@@ -8,6 +8,7 @@ import type { PracticeEvent } from "./model";
 const BETA_PRIOR_ALPHA = 2;
 const BETA_PRIOR_BETA = 1;
 const RECENT_KIND_WINDOW = 40;
+const RECENT_PAIR_WINDOW = 10;
 const KIND_BALANCE_THRESHOLD = 4;
 const TOP_PAIR_MIN_ATTEMPTS = 3;
 
@@ -18,6 +19,9 @@ export interface MatrixCellStats {
   correct: number;
   posteriorAccuracy: number | null;
   rawAccuracy: number | null;
+  recentAttempts: number;
+  recentCorrect: number;
+  recentAccuracy: number | null;
 }
 
 export interface MatrixRowStats {
@@ -29,7 +33,9 @@ export interface MatrixTopPair {
   label: string;
   attempts: number;
   correct: number;
-  posteriorAccuracy: number;
+  recentAttempts: number;
+  recentCorrect: number;
+  recentAccuracy: number;
 }
 
 export interface MatrixSummary {
@@ -68,6 +74,7 @@ export interface DailyExercisePoint {
 interface PairCounts {
   attempts: number;
   correct: number;
+  recentResults: boolean[];
 }
 
 interface TrackedAnswerEvent extends PracticeEvent {
@@ -101,6 +108,8 @@ export const calculatePosteriorAccuracy = (correct: number, attempts: number) =>
 
 const getPairKey = (kind: ConfusionKind, correctKey: string, distractorKey: string) =>
   `${kind}:${correctKey}->${distractorKey}`;
+
+const getRawAccuracy = (correct: number, attempts: number) => (attempts ? correct / attempts : null);
 
 const getTrackedAnswerEvents = (events: PracticeEvent[]) =>
   events.filter(
@@ -168,6 +177,28 @@ const getPracticeOverview = (
   totalListeningMs: audioListenedEvents.reduce((sum, event) => sum + event.duration_ms, 0),
 });
 
+const addPairResult = (counts: Map<string, PairCounts>, pairKey: string, isCorrect: boolean) => {
+  const current = counts.get(pairKey) ?? { attempts: 0, correct: 0, recentResults: [] };
+  const recentResults = [...current.recentResults, isCorrect].slice(-RECENT_PAIR_WINDOW);
+
+  counts.set(pairKey, {
+    attempts: current.attempts + 1,
+    correct: current.correct + (isCorrect ? 1 : 0),
+    recentResults,
+  });
+};
+
+const getRecentPairStats = (pair: PairCounts) => {
+  const recentAttempts = pair.recentResults.length;
+  const recentCorrect = pair.recentResults.filter(Boolean).length;
+
+  return {
+    recentAttempts,
+    recentCorrect,
+    recentAccuracy: getRawAccuracy(recentCorrect, recentAttempts),
+  };
+};
+
 const buildPairCounts = (events: TrackedAnswerEvent[], kind: ConfusionKind) => {
   const counts = new Map<string, PairCounts>();
 
@@ -183,12 +214,7 @@ const buildPairCounts = (events: TrackedAnswerEvent[], kind: ConfusionKind) => {
       return;
     }
 
-    const pairKey = getPairKey(kind, correctKey, distractorKey);
-    const current = counts.get(pairKey) ?? { attempts: 0, correct: 0 };
-    counts.set(pairKey, {
-      attempts: current.attempts + 1,
-      correct: current.correct + (event.isCorrect ? 1 : 0),
-    });
+    addPairResult(counts, getPairKey(kind, correctKey, distractorKey), event.isCorrect);
   });
 
   return counts;
@@ -214,6 +240,9 @@ const toMatrixSummary = (
           correct: 0,
           posteriorAccuracy: null,
           rawAccuracy: null,
+          recentAttempts: 0,
+          recentCorrect: 0,
+          recentAccuracy: null,
         } satisfies MatrixCellStats;
       }
 
@@ -227,12 +256,16 @@ const toMatrixSummary = (
           correct: 0,
           posteriorAccuracy: null,
           rawAccuracy: null,
+          recentAttempts: 0,
+          recentCorrect: 0,
+          recentAccuracy: null,
         } satisfies MatrixCellStats;
       }
 
       attempts += pair.attempts;
       correct += pair.correct;
       distinctPairs += 1;
+      const recentStats = getRecentPairStats(pair);
 
       return {
         correctKey,
@@ -240,7 +273,10 @@ const toMatrixSummary = (
         attempts: pair.attempts,
         correct: pair.correct,
         posteriorAccuracy: calculatePosteriorAccuracy(pair.correct, pair.attempts),
-        rawAccuracy: pair.correct / pair.attempts,
+        rawAccuracy: getRawAccuracy(pair.correct, pair.attempts),
+        recentAttempts: recentStats.recentAttempts,
+        recentCorrect: recentStats.recentCorrect,
+        recentAccuracy: recentStats.recentAccuracy,
       } satisfies MatrixCellStats;
     }),
   }));
@@ -250,7 +286,7 @@ const toMatrixSummary = (
       row.cells
         .filter(
           (cell) =>
-            cell.posteriorAccuracy !== null &&
+            cell.recentAccuracy !== null &&
             cell.attempts >= TOP_PAIR_MIN_ATTEMPTS &&
             cell.correctKey !== cell.distractorKey
         )
@@ -258,12 +294,18 @@ const toMatrixSummary = (
           label: `${cell.correctKey} -> ${cell.distractorKey}`,
           attempts: cell.attempts,
           correct: cell.correct,
-          posteriorAccuracy: cell.posteriorAccuracy!,
+          recentAttempts: cell.recentAttempts,
+          recentCorrect: cell.recentCorrect,
+          recentAccuracy: cell.recentAccuracy!,
         }))
     )
     .sort((left, right) => {
-      if (left.posteriorAccuracy !== right.posteriorAccuracy) {
-        return left.posteriorAccuracy - right.posteriorAccuracy;
+      if (left.recentAccuracy !== right.recentAccuracy) {
+        return left.recentAccuracy - right.recentAccuracy;
+      }
+
+      if (left.recentAttempts !== right.recentAttempts) {
+        return right.recentAttempts - left.recentAttempts;
       }
 
       return right.attempts - left.attempts;
@@ -293,12 +335,7 @@ const getCandidatePairCounts = (events: TrackedAnswerEvent[]) => {
       return;
     }
 
-    const pairKey = getPairKey(event.confusionKind, correctKey, distractorKey);
-    const current = counts.get(pairKey) ?? { attempts: 0, correct: 0 };
-    counts.set(pairKey, {
-      attempts: current.attempts + 1,
-      correct: current.correct + (event.isCorrect ? 1 : 0),
-    });
+    addPairResult(counts, getPairKey(event.confusionKind, correctKey, distractorKey), event.isCorrect);
   });
 
   return counts;
@@ -327,15 +364,14 @@ const getCandidateScore = (
       : getPairKey(candidate.kind, candidate.correctTone!, candidate.distractorTone!);
   const counts = pairCounts.get(pairKey);
   const attempts = counts?.attempts ?? 0;
-  const correct = counts?.correct ?? 0;
-  const posteriorAccuracy = attempts ? calculatePosteriorAccuracy(correct, attempts) : null;
+  const recentStats = counts ? getRecentPairStats(counts) : null;
 
   let score = 0;
 
   if (attempts === 0) {
     score += 100;
-  } else if (posteriorAccuracy !== null) {
-    score += (1 - posteriorAccuracy) * 20;
+  } else if (recentStats && recentStats.recentAccuracy !== null) {
+    score += (1 - recentStats.recentAccuracy) * 20;
   }
 
   if (targetKind === candidate.kind) {
