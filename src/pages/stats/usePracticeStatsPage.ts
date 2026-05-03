@@ -1,5 +1,8 @@
 import { onMounted, ref } from "vue";
-import { listPracticeEvents } from "../../entities/practice-progress/storage";
+import {
+  listPracticeEvents,
+  readPracticeExportSnapshot,
+} from "../../entities/practice-progress/storage";
 import {
   getAccuracyTrialSeries,
   getPracticeStatsSnapshot,
@@ -30,12 +33,26 @@ export const usePracticeStatsPage = () => {
     }
   };
 
+  const exportTrackedData = async () => {
+    const payload = await readPracticeExportSnapshot();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `viet-listening-progress-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   onMounted(() => {
     void loadStats();
   });
 
   return {
     accuracyTrials,
+    exportTrackedData,
     loadError,
     loading,
     stats,

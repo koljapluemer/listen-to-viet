@@ -8,7 +8,6 @@ const {
   autoplayHint,
   changedCharacterIndex,
   disabledButtonIndex,
-  exportProgress,
   handleAnswer,
   handleAudioEnded,
   handleAudioPause,
@@ -49,12 +48,6 @@ void audioRef;
             </RouterLink>
           </div>
         </div>
-        <button
-          class="btn btn-sm btn-outline"
-          @click="exportProgress"
-        >
-          Export progress
-        </button>
       </div>
     </header>
 

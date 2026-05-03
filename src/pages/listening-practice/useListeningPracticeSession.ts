@@ -10,7 +10,6 @@ import {
   appendPracticeEvent,
   listLearningRecords,
   listPracticeEvents,
-  readPracticeExportSnapshot,
   saveLearningRecord,
 } from "../../entities/practice-progress/storage";
 import {
@@ -56,18 +55,6 @@ const shuffle = <T>(items: T[]) => {
   }
 
   return copy;
-};
-
-const downloadJson = (payload: unknown, filename: string) => {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
 };
 
 export const useListeningPracticeSession = () => {
@@ -373,15 +360,6 @@ export const useListeningPracticeSession = () => {
     }
   };
 
-  const exportProgress = async () => {
-    const payload = await readPracticeExportSnapshot();
-
-    downloadJson(
-      payload,
-      `viet-listening-progress-${new Date().toISOString().slice(0, 10)}.json`
-    );
-  };
-
   const loadSessionState = async () => {
     const transcriptResponse = await fetch("/transcriptAll.txt");
 
@@ -442,7 +420,6 @@ export const useListeningPracticeSession = () => {
     autoplayHint,
     changedCharacterIndex,
     disabledButtonIndex,
-    exportProgress,
     handleAnswer,
     handleAudioEnded,
     handleAudioPause,

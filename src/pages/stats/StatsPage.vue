@@ -6,7 +6,7 @@ import PracticeDailyVolumeChart from "./PracticeDailyVolumeChart.vue";
 import PracticeStatsMatrix from "./PracticeStatsMatrix.vue";
 import { usePracticeStatsPage } from "./usePracticeStatsPage";
 
-const { accuracyTrials, loadError, loading, stats } = usePracticeStatsPage();
+const { accuracyTrials, exportTrackedData, loadError, loading, stats } = usePracticeStatsPage();
 
 const toneLabels: Record<string, string> = {
   ngang: "ngang · -",
@@ -68,12 +68,23 @@ const formatDuration = (durationMs: number) => {
     <main class="px-4 py-6 sm:px-6">
       <section class="mx-auto max-w-6xl space-y-6">
         <div class="space-y-2">
-          <h1 class="text-2xl font-semibold">
-            Stats
-          </h1>
-          <p class="text-sm text-base-content/70">
-            Rows are the correct symbol. Columns are the distractor shown against it.
-          </p>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div class="space-y-2">
+              <h1 class="text-2xl font-semibold">
+                Stats
+              </h1>
+              <p class="text-sm text-base-content/70">
+                Rows are the correct symbol. Columns are the distractor shown against it.
+              </p>
+            </div>
+
+            <button
+              class="btn btn-outline btn-sm w-full sm:w-auto"
+              @click="exportTrackedData"
+            >
+              Export tracked data JSON
+            </button>
+          </div>
         </div>
 
         <div
@@ -104,6 +115,17 @@ const formatDuration = (durationMs: number) => {
 
         <template v-else-if="stats">
           <section class="rounded-box border border-base-300 bg-base-100 p-4">
+            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 class="text-lg font-semibold">
+                  Overview
+                </h2>
+                <p class="text-sm text-base-content/70">
+                  Export includes the learning models and the full raw event log used for these stats.
+                </p>
+              </div>
+            </div>
+
             <div class="stats stats-vertical w-full border border-base-300 bg-base-200 shadow-sm sm:stats-horizontal">
               <div class="stat">
                 <div class="stat-title">
