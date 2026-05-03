@@ -19,6 +19,8 @@ const props = defineProps<{
   days: DailyExercisePoint[];
 }>();
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const shortDateFormatter = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
   month: "short",
@@ -35,8 +37,50 @@ const toDate = (day: string) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const parseDayKey = (day: string) => {
+  const [year, month, dayOfMonth] = day.split("-").map(Number);
+
+  if (![year, month, dayOfMonth].every(Number.isInteger)) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(year, month - 1, dayOfMonth));
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDayKey = (date: Date) =>
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+
+const completeDays = computed<DailyExercisePoint[]>(() => {
+  if (!props.days.length) {
+    return [];
+  }
+
+  const sortedDays = [...props.days].sort((left, right) => left.day.localeCompare(right.day));
+  const firstDay = parseDayKey(sortedDays[0].day);
+  const lastPoint = sortedDays[sortedDays.length - 1];
+  const lastDay = parseDayKey(lastPoint?.day ?? "");
+
+  if (!firstDay || !lastDay) {
+    return sortedDays;
+  }
+
+  const exercisesByDay = new Map(sortedDays.map((point) => [point.day, point.exercises]));
+  const filledDays: DailyExercisePoint[] = [];
+
+  for (let time = firstDay.getTime(); time <= lastDay.getTime(); time += DAY_MS) {
+    const day = formatDayKey(new Date(time));
+    filledDays.push({
+      day,
+      exercises: exercisesByDay.get(day) ?? 0,
+    });
+  }
+
+  return filledDays;
+});
+
 const chartLabels = computed(() =>
-  props.days.map((point) => {
+  completeDays.value.map((point) => {
     const date = toDate(point.day);
     return date ? shortDateFormatter.format(date) : point.day;
   })
@@ -50,7 +94,7 @@ const chartData = computed<ChartData<"bar">>(() => ({
       borderColor: "rgb(37, 99, 235)",
       borderRadius: 6,
       borderSkipped: false,
-      data: props.days.map((point) => point.exercises),
+      data: completeDays.value.map((point) => point.exercises),
       label: "Exercises",
       maxBarThickness: 36,
     },
@@ -67,7 +111,7 @@ const chartOptions = computed<ChartOptions<"bar">>(() => ({
     tooltip: {
       callbacks: {
         title(items) {
-          const point = props.days[items[0]?.dataIndex ?? -1];
+          const point = completeDays.value[items[0]?.dataIndex ?? -1];
 
           if (!point) {
             return "";
@@ -102,7 +146,7 @@ const chartOptions = computed<ChartOptions<"bar">>(() => ({
   },
 }));
 
-const chartMinWidth = computed(() => `${Math.max(props.days.length * 56, 320)}px`);
+const chartMinWidth = computed(() => `${Math.max(completeDays.value.length * 56, 320)}px`);
 </script>
 
 <template>
@@ -112,12 +156,13 @@ const chartMinWidth = computed(() => `${Math.max(props.days.length * 56, 320)}px
         Exercises per day
       </h2>
       <span class="text-sm text-base-content/70">
-        {{ days.length }} active day{{ days.length === 1 ? "" : "s" }}
+        {{ days.length }} active day{{ days.length === 1 ? "" : "s" }} over
+        {{ completeDays.length }} day{{ completeDays.length === 1 ? "" : "s" }}
       </span>
     </div>
 
     <div
-      v-if="days.length"
+      v-if="completeDays.length"
       class="overflow-x-auto"
     >
       <div
