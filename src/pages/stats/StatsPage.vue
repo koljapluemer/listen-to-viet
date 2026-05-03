@@ -47,9 +47,6 @@ const formatDuration = (durationMs: number) => {
           <h1 class="text-2xl font-semibold">
             Stats
           </h1>
-          <p class="text-sm text-base-content/70">
-            Rows are the correct symbol. Columns are the distractor shown against it.
-          </p>
         </div>
 
         <button
@@ -82,24 +79,10 @@ const formatDuration = (durationMs: number) => {
       <h2 class="text-lg font-semibold">
         No tracked stats yet
       </h2>
-      <p class="mt-2 text-sm text-base-content/70">
-        Stats start with new attempts from this version onward. Play a few rounds to populate the matrices.
-      </p>
     </div>
 
     <template v-else-if="stats">
       <section class="rounded-box border border-base-300 bg-base-100 p-4">
-        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 class="text-lg font-semibold">
-              Overview
-            </h2>
-            <p class="text-sm text-base-content/70">
-              Export includes the learning models and the full raw event log used for these stats.
-            </p>
-          </div>
-        </div>
-
         <div class="stats stats-vertical w-full border border-base-300 bg-base-200 shadow-sm sm:stats-horizontal">
           <div class="stat">
             <div class="stat-title">
