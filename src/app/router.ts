@@ -7,10 +7,12 @@ export const router = createRouter({
   routes: [
     {
       path: "/",
+      name: "practice",
       component: ListeningPracticePage,
     },
     {
       path: "/stats",
+      name: "stats",
       component: StatsPage,
     },
   ],

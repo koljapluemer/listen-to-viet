@@ -40,156 +40,128 @@ const formatDuration = (durationMs: number) => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-base-200">
-    <header class="border-b border-base-300 bg-base-100">
-      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <div class="flex items-center gap-3">
-          <p class="text-base font-semibold">
-            Listen to Viet
-          </p>
-          <div class="join">
-            <RouterLink
-              to="/"
-              class="btn btn-sm join-item"
-            >
-              Practice
-            </RouterLink>
-            <RouterLink
-              to="/stats"
-              class="btn btn-sm join-item btn-active"
-            >
-              Stats
-            </RouterLink>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <main class="px-4 py-6 sm:px-6">
-      <section class="mx-auto max-w-6xl space-y-6">
+  <section class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6">
+    <div class="space-y-2">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div class="space-y-2">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div class="space-y-2">
-              <h1 class="text-2xl font-semibold">
-                Stats
-              </h1>
-              <p class="text-sm text-base-content/70">
-                Rows are the correct symbol. Columns are the distractor shown against it.
-              </p>
-            </div>
-
-            <button
-              class="btn btn-outline btn-sm w-full sm:w-auto"
-              @click="exportTrackedData"
-            >
-              Export tracked data JSON
-            </button>
-          </div>
-        </div>
-
-        <div
-          v-if="loadError"
-          class="alert alert-error"
-        >
-          <span>{{ loadError }}</span>
-        </div>
-
-        <div
-          v-else-if="loading"
-          class="flex min-h-64 items-center justify-center rounded-box border border-base-300 bg-base-100"
-        >
-          <span class="loading loading-spinner loading-lg" />
-        </div>
-
-        <div
-          v-else-if="stats && stats.overview.totalExercises === 0"
-          class="rounded-box border border-base-300 bg-base-100 p-6"
-        >
-          <h2 class="text-lg font-semibold">
-            No tracked stats yet
-          </h2>
-          <p class="mt-2 text-sm text-base-content/70">
-            Stats start with new attempts from this version onward. Play a few rounds to populate the matrices.
+          <h1 class="text-2xl font-semibold">
+            Stats
+          </h1>
+          <p class="text-sm text-base-content/70">
+            Rows are the correct symbol. Columns are the distractor shown against it.
           </p>
         </div>
 
-        <template v-else-if="stats">
-          <section class="rounded-box border border-base-300 bg-base-100 p-4">
-            <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 class="text-lg font-semibold">
-                  Overview
-                </h2>
-                <p class="text-sm text-base-content/70">
-                  Export includes the learning models and the full raw event log used for these stats.
-                </p>
-              </div>
-            </div>
+        <button
+          class="btn btn-outline btn-sm w-full sm:w-auto"
+          @click="exportTrackedData"
+        >
+          Export tracked data JSON
+        </button>
+      </div>
+    </div>
 
-            <div class="stats stats-vertical w-full border border-base-300 bg-base-200 shadow-sm sm:stats-horizontal">
-              <div class="stat">
-                <div class="stat-title">
-                  Exercises completed
-                </div>
-                <div class="stat-value text-primary">
-                  {{ stats.overview.totalExercises }}
-                </div>
-              </div>
+    <div
+      v-if="loadError"
+      class="alert alert-error"
+    >
+      <span>{{ loadError }}</span>
+    </div>
 
-              <div class="stat">
-                <div class="stat-title">
-                  Audio listening time
-                </div>
-                <div class="stat-value text-secondary">
-                  {{ formatDuration(stats.overview.totalListeningMs) }}
-                </div>
-              </div>
-            </div>
-          </section>
+    <div
+      v-else-if="loading"
+      class="flex min-h-64 items-center justify-center rounded-box border border-base-300 bg-base-100"
+    >
+      <span class="loading loading-spinner loading-lg" />
+    </div>
 
-          <PracticeDailyVolumeChart :days="stats.dailyExercises" />
+    <div
+      v-else-if="stats && stats.overview.totalExercises === 0"
+      class="rounded-box border border-base-300 bg-base-100 p-6"
+    >
+      <h2 class="text-lg font-semibold">
+        No tracked stats yet
+      </h2>
+      <p class="mt-2 text-sm text-base-content/70">
+        Stats start with new attempts from this version onward. Play a few rounds to populate the matrices.
+      </p>
+    </div>
 
-          <PracticeAccuracyChart :trials="accuracyTrials" />
-
-          <section
-            v-if="trackedConfusionAttempts > 0"
-            class="space-y-4"
-          >
-            <h2 class="text-xl font-semibold">
-              Letter confusions
-            </h2>
-
-            <div class="grid gap-6 xl:grid-cols-2">
-              <PracticeStatsMatrix
-                v-for="group in LETTER_COMPARISON_GROUPS"
-                :key="group.join('-')"
-                :title="group.join(' / ')"
-                :summary="stats.letter"
-                :keys="[...group]"
-              />
-            </div>
-
-            <PracticeStatsMatrix
-              title="Tone confusions"
-              :summary="stats.tone"
-              :format-key="(key) => toneLabels[key] ?? key"
-            />
-          </section>
-
-          <section
-            v-else
-            class="rounded-box border border-base-300 bg-base-100 p-6"
-          >
+    <template v-else-if="stats">
+      <section class="rounded-box border border-base-300 bg-base-100 p-4">
+        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
             <h2 class="text-lg font-semibold">
-              Confusion stats need newer attempts
+              Overview
             </h2>
-            <p class="mt-2 text-sm text-base-content/70">
-              Exercise totals and listening time are available, but the confusion matrices only
-              populate from analytics-enabled attempts.
+            <p class="text-sm text-base-content/70">
+              Export includes the learning models and the full raw event log used for these stats.
             </p>
-          </section>
-        </template>
+          </div>
+        </div>
+
+        <div class="stats stats-vertical w-full border border-base-300 bg-base-200 shadow-sm sm:stats-horizontal">
+          <div class="stat">
+            <div class="stat-title">
+              Exercises completed
+            </div>
+            <div class="stat-value text-primary">
+              {{ stats.overview.totalExercises }}
+            </div>
+          </div>
+
+          <div class="stat">
+            <div class="stat-title">
+              Audio listening time
+            </div>
+            <div class="stat-value text-secondary">
+              {{ formatDuration(stats.overview.totalListeningMs) }}
+            </div>
+          </div>
+        </div>
       </section>
-    </main>
-  </div>
+
+      <PracticeDailyVolumeChart :days="stats.dailyExercises" />
+
+      <PracticeAccuracyChart :trials="accuracyTrials" />
+
+      <section
+        v-if="trackedConfusionAttempts > 0"
+        class="space-y-4"
+      >
+        <h2 class="text-xl font-semibold">
+          Letter confusions
+        </h2>
+
+        <div class="grid gap-6 xl:grid-cols-2">
+          <PracticeStatsMatrix
+            v-for="group in LETTER_COMPARISON_GROUPS"
+            :key="group.join('-')"
+            :title="group.join(' / ')"
+            :summary="stats.letter"
+            :keys="[...group]"
+          />
+        </div>
+
+        <PracticeStatsMatrix
+          title="Tone confusions"
+          :summary="stats.tone"
+          :format-key="(key) => toneLabels[key] ?? key"
+        />
+      </section>
+
+      <section
+        v-else
+        class="rounded-box border border-base-300 bg-base-100 p-6"
+      >
+        <h2 class="text-lg font-semibold">
+          Confusion stats need newer attempts
+        </h2>
+        <p class="mt-2 text-sm text-base-content/70">
+          Exercise totals and listening time are available, but the confusion matrices only
+          populate from analytics-enabled attempts.
+        </p>
+      </section>
+    </template>
+  </section>
 </template>
