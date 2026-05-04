@@ -44,6 +44,7 @@ type Phase = "loading" | "ready" | "wrong";
 const MAX_WORDS = 5;
 const REVIEW_THRESHOLD = 0.7;
 const REVIEW_PROBABILITY = 0.8;
+const FULLY_RANDOM_ROUND_PROBABILITY = 0.5;
 const INTERACTIVE_TAG_NAMES = new Set(["A", "AUDIO", "BUTTON", "INPUT", "SELECT", "TEXTAREA"]);
 
 const shuffle = <T>(items: T[]) => {
@@ -94,6 +95,25 @@ export const useListeningPracticeSession = () => {
     if (!candidate) {
       return null;
     }
+
+    return {
+      clip,
+      candidate,
+      options: shuffle([
+        { label: clip.transcript, isCorrect: true },
+        { label: candidate.label, isCorrect: false },
+      ]),
+    };
+  };
+
+  const createRandomRound = (clip: Clip): Round | null => {
+    const candidates = listDistractorCandidates(clip.transcript);
+
+    if (!candidates.length) {
+      return null;
+    }
+
+    const candidate = candidates[Math.floor(Math.random() * candidates.length)];
 
     return {
       clip,
@@ -233,9 +253,13 @@ export const useListeningPracticeSession = () => {
     loadError.value = "";
 
     let nextRound: Round | null = null;
+    const useFullyRandomRound = Math.random() < FULLY_RANDOM_ROUND_PROBABILITY;
 
     for (let attempt = 0; attempt < 10 && !nextRound; attempt += 1) {
-      nextRound = createRound(pickNextClip());
+      const clip = useFullyRandomRound
+        ? clips.value[Math.floor(Math.random() * clips.value.length)]
+        : pickNextClip();
+      nextRound = useFullyRandomRound ? createRandomRound(clip) : createRound(clip);
     }
 
     if (!nextRound) {
