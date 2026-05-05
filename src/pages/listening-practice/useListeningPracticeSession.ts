@@ -19,6 +19,7 @@ import {
   toStoredClip,
   type LearningRecord,
   type PracticeEvent,
+  type PracticeRoundSelectionMode,
 } from "../../entities/practice-progress/model";
 import { chooseDistractorCandidate } from "../../entities/practice-progress/stats";
 
@@ -31,6 +32,7 @@ interface Round {
   clip: Clip;
   candidate: DistractorCandidate;
   options: AnswerOption[];
+  selectionMode: PracticeRoundSelectionMode;
 }
 
 interface SessionLearningRecord {
@@ -70,6 +72,7 @@ export const useListeningPracticeSession = () => {
   const currentListeningMs = ref(0);
   const currentListeningClip = ref<ReturnType<typeof toStoredClip> | null>(null);
   const currentListeningDistractor = ref<string | undefined>(undefined);
+  const currentListeningSelectionMode = ref<PracticeRoundSelectionMode | undefined>(undefined);
   const lastAudioPositionSeconds = ref<number | null>(null);
   const autoplayHint = ref("");
   const loadError = ref("");
@@ -99,6 +102,7 @@ export const useListeningPracticeSession = () => {
     return {
       clip,
       candidate,
+      selectionMode: "learningPrediction",
       options: shuffle([
         { label: clip.transcript, isCorrect: true },
         { label: candidate.label, isCorrect: false },
@@ -118,6 +122,7 @@ export const useListeningPracticeSession = () => {
     return {
       clip,
       candidate,
+      selectionMode: "random",
       options: shuffle([
         { label: clip.transcript, isCorrect: true },
         { label: candidate.label, isCorrect: false },
@@ -161,6 +166,7 @@ export const useListeningPracticeSession = () => {
     currentListeningMs.value = 0;
     currentListeningClip.value = null;
     currentListeningDistractor.value = undefined;
+    currentListeningSelectionMode.value = undefined;
     lastAudioPositionSeconds.value = null;
   };
 
@@ -189,6 +195,7 @@ export const useListeningPracticeSession = () => {
 
     currentListeningClip.value = toStoredClip(round.value.clip);
     currentListeningDistractor.value = round.value.candidate.label;
+    currentListeningSelectionMode.value = round.value.selectionMode;
     lastAudioPositionSeconds.value = audio.currentTime;
   };
 
@@ -212,6 +219,7 @@ export const useListeningPracticeSession = () => {
     const listenedDurationMs = Math.round(currentListeningMs.value);
     const clip = currentListeningClip.value;
     const distractor = currentListeningDistractor.value;
+    const selectionMode = currentListeningSelectionMode.value;
 
     resetAudioPlaybackTracking();
 
@@ -223,6 +231,7 @@ export const useListeningPracticeSession = () => {
       eventType: "audioListened",
       clip,
       timestamp: new Date().toISOString(),
+      selectionMode,
       distractor,
       duration_ms: listenedDurationMs,
     };
@@ -274,6 +283,7 @@ export const useListeningPracticeSession = () => {
       eventType: "roundStarted",
       clip: toStoredClip(nextRound.clip),
       timestamp: new Date().toISOString(),
+      selectionMode: nextRound.selectionMode,
       distractor: nextRound.candidate.label,
     };
 
@@ -332,6 +342,7 @@ export const useListeningPracticeSession = () => {
         eventType: "answer",
         clip: toStoredClip(round.value.clip),
         timestamp: new Date().toISOString(),
+        selectionMode: round.value.selectionMode,
         distractor: round.value.candidate.label,
         duration_ms: taskStartTime.value === null ? null : Date.now() - taskStartTime.value,
         selectedTranscript: option.label,

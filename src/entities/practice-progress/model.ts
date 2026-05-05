@@ -13,10 +13,13 @@ export interface StoredClip {
   transcript: string;
 }
 
+export type PracticeRoundSelectionMode = "random" | "learningPrediction";
+
 export interface PracticeEvent {
   eventType: "roundStarted" | "answer" | "audioListened";
   clip: StoredClip;
   timestamp: string;
+  selectionMode?: PracticeRoundSelectionMode;
   distractor?: string;
   duration_ms?: number | null;
   selectedTranscript?: string;
@@ -72,6 +75,7 @@ export const clonePracticeEvent = (event: PracticeEvent): PracticeEvent => ({
   eventType: event.eventType,
   clip: cloneStoredClip(event.clip),
   timestamp: event.timestamp,
+  selectionMode: event.selectionMode,
   distractor: event.distractor,
   duration_ms: event.duration_ms,
   selectedTranscript: event.selectedTranscript,

@@ -3,6 +3,7 @@ import type { Model } from "ebisu-js/interfaces";
 type DbConfusionKind = "letter" | "tone";
 type DbLetterKey = "a" | "ă" | "â" | "e" | "ê" | "i" | "o" | "ô" | "ơ" | "u" | "ư" | "y" | "d" | "đ";
 type DbToneKey = "ngang" | "huyen" | "sac" | "hoi" | "nga" | "nang";
+type DbPracticeRoundSelectionMode = "random" | "learningPrediction";
 
 export interface DbStoredClip {
   filename: string;
@@ -14,6 +15,7 @@ export interface DbPracticeEventRow {
   eventType: "roundStarted" | "answer" | "audioListened";
   clip: DbStoredClip;
   timestamp: string;
+  selectionMode?: DbPracticeRoundSelectionMode;
   distractor?: string;
   duration_ms?: number | null;
   selectedTranscript?: string;
