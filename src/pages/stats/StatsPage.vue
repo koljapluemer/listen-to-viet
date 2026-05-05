@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { LETTER_COMPARISON_GROUPS } from "../../entities/listening-clip/model";
 import PracticeAccuracyChart from "./PracticeAccuracyChart.vue";
+import PracticeDailyAccuracyChart from "./PracticeDailyAccuracyChart.vue";
 import PracticeDailyVolumeChart from "./PracticeDailyVolumeChart.vue";
 import PracticeStatsMatrix from "./PracticeStatsMatrix.vue";
 import { usePracticeStatsPage } from "./usePracticeStatsPage";
@@ -105,6 +106,7 @@ const formatDuration = (durationMs: number) => {
       </section>
 
       <PracticeDailyVolumeChart :days="stats.dailyExercises" />
+      <PracticeDailyAccuracyChart :days="stats.dailyAccuracy" />
 
       <PracticeAccuracyChart :trials="accuracyTrials" />
 

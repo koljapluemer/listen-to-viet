@@ -12,6 +12,13 @@ import {
 import { computed } from "vue";
 import { Bar } from "vue-chartjs";
 import type { DailyExercisePoint } from "../../entities/practice-progress/stats";
+import {
+  fillDailyRange,
+  fullDateFormatter,
+  getChartMinWidth,
+  shortDateFormatter,
+  toDate,
+} from "./dailyChart";
 
 ChartJS.register(BarElement, CategoryScale, Legend, LinearScale, Tooltip);
 
@@ -19,65 +26,12 @@ const props = defineProps<{
   days: DailyExercisePoint[];
 }>();
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-const shortDateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-});
-
-const fullDateFormatter = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
-
-const toDate = (day: string) => {
-  const date = new Date(`${day}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const parseDayKey = (day: string) => {
-  const [year, month, dayOfMonth] = day.split("-").map(Number);
-
-  if (![year, month, dayOfMonth].every(Number.isInteger)) {
-    return null;
-  }
-
-  const date = new Date(Date.UTC(year, month - 1, dayOfMonth));
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const formatDayKey = (date: Date) =>
-  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-
-const completeDays = computed<DailyExercisePoint[]>(() => {
-  if (!props.days.length) {
-    return [];
-  }
-
-  const sortedDays = [...props.days].sort((left, right) => left.day.localeCompare(right.day));
-  const firstDay = parseDayKey(sortedDays[0].day);
-  const lastPoint = sortedDays[sortedDays.length - 1];
-  const lastDay = parseDayKey(lastPoint?.day ?? "");
-
-  if (!firstDay || !lastDay) {
-    return sortedDays;
-  }
-
-  const exercisesByDay = new Map(sortedDays.map((point) => [point.day, point.exercises]));
-  const filledDays: DailyExercisePoint[] = [];
-
-  for (let time = firstDay.getTime(); time <= lastDay.getTime(); time += DAY_MS) {
-    const day = formatDayKey(new Date(time));
-    filledDays.push({
-      day,
-      exercises: exercisesByDay.get(day) ?? 0,
-    });
-  }
-
-  return filledDays;
-});
+const completeDays = computed<DailyExercisePoint[]>(() =>
+  fillDailyRange(props.days, (day) => ({
+    day,
+    exercises: 0,
+  }))
+);
 
 const chartLabels = computed(() =>
   completeDays.value.map((point) => {
@@ -146,7 +100,7 @@ const chartOptions = computed<ChartOptions<"bar">>(() => ({
   },
 }));
 
-const chartMinWidth = computed(() => `${Math.max(completeDays.value.length * 56, 320)}px`);
+const chartMinWidth = computed(() => getChartMinWidth(completeDays.value.length));
 </script>
 
 <template>

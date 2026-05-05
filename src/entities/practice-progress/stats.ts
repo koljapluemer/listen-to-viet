@@ -56,6 +56,7 @@ export interface MatrixSummary {
 export interface PracticeStatsSnapshot {
   overview: PracticeOverviewStats;
   dailyExercises: DailyExercisePoint[];
+  dailyAccuracy: DailyAccuracyPoint[];
   letter: MatrixSummary;
   tone: MatrixSummary;
 }
@@ -76,6 +77,15 @@ export interface PracticeOverviewStats {
 export interface DailyExercisePoint {
   day: string;
   exercises: number;
+}
+
+export interface DailyAccuracyPoint {
+  day: string;
+  trials: number;
+  correct: number;
+  accuracy: number | null;
+  confidenceLow95: number | null;
+  confidenceHigh95: number | null;
 }
 
 interface PairCounts {
@@ -109,6 +119,8 @@ const LOCAL_DAY_PARTS_FORMATTER = new Intl.DateTimeFormat(undefined, {
   month: "2-digit",
   year: "numeric",
 });
+
+const WILSON_Z_95 = 1.959963984540054;
 
 export const calculatePosteriorAccuracy = (correct: number, attempts: number) =>
   (correct + BETA_PRIOR_ALPHA) / (attempts + BETA_PRIOR_ALPHA + BETA_PRIOR_BETA);
@@ -193,6 +205,58 @@ const getDailyExerciseSeries = (events: AnswerEvent[]): DailyExercisePoint[] => 
       day,
       exercises,
     }));
+};
+
+const getWilsonConfidenceInterval95 = (correct: number, trials: number) => {
+  if (trials <= 0) {
+    return {
+      high: null,
+      low: null,
+    };
+  }
+
+  const zSquared = WILSON_Z_95 ** 2;
+  const proportion = correct / trials;
+  const denominator = 1 + zSquared / trials;
+  const center = (proportion + zSquared / (2 * trials)) / denominator;
+  const margin =
+    (WILSON_Z_95 *
+      Math.sqrt((proportion * (1 - proportion)) / trials + zSquared / (4 * trials ** 2))) /
+    denominator;
+
+  return {
+    high: Math.min(1, center + margin),
+    low: Math.max(0, center - margin),
+  };
+};
+
+const getDailyAccuracySeries = (events: AccuracyAnswerEvent[]): DailyAccuracyPoint[] => {
+  const counts = new Map<string, { correct: number; trials: number }>();
+
+  events.forEach((event) => {
+    const day = getLocalDayKey(event.timestamp);
+    const current = counts.get(day) ?? { correct: 0, trials: 0 };
+
+    counts.set(day, {
+      correct: current.correct + (event.isCorrect ? 1 : 0),
+      trials: current.trials + 1,
+    });
+  });
+
+  return [...counts.entries()]
+    .sort(([leftDay], [rightDay]) => leftDay.localeCompare(rightDay))
+    .map(([day, { correct, trials }]) => {
+      const interval = getWilsonConfidenceInterval95(correct, trials);
+
+      return {
+        accuracy: trials ? correct / trials : null,
+        confidenceHigh95: interval.high,
+        confidenceLow95: interval.low,
+        correct,
+        day,
+        trials,
+      };
+    });
 };
 
 const getPracticeOverview = (
@@ -410,11 +474,13 @@ const getCandidateScore = (
 
 export const getPracticeStatsSnapshot = (events: PracticeEvent[]): PracticeStatsSnapshot => {
   const answerEvents = getAnswerEvents(events);
+  const accuracyAnswerEvents = getAccuracyAnswerEvents(events);
   const trackedEvents = getTrackedAnswerEvents(events);
   const audioListenedEvents = getAudioListenedEvents(events);
 
   return {
     overview: getPracticeOverview(answerEvents, audioListenedEvents),
+    dailyAccuracy: getDailyAccuracySeries(accuracyAnswerEvents),
     dailyExercises: getDailyExerciseSeries(answerEvents),
     letter: toMatrixSummary("letter", LETTER_KEYS, buildPairCounts(trackedEvents, "letter")),
     tone: toMatrixSummary("tone", TONE_KEYS, buildPairCounts(trackedEvents, "tone")),
