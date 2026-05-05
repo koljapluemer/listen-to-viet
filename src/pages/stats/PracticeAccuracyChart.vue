@@ -87,7 +87,9 @@ const toRollingDataset = (
 const chartData = computed<ChartData<"line">>(() => ({
   datasets: [
     ...(isRecentRange.value ? [markerDataset.value] : []),
-    toRollingDataset("Rolling 10", "rgb(59, 130, 246)", (trial) => trial.rolling10),
+    ...(isRecentRange.value
+      ? [toRollingDataset("Rolling 10", "rgb(59, 130, 246)", (trial) => trial.rolling10)]
+      : []),
     toRollingDataset("Rolling 100", "rgb(245, 158, 11)", (trial) => trial.rolling100),
     ...(!isRecentRange.value
       ? [toRollingDataset("Rolling 1000", "rgb(168, 85, 247)", (trial) => trial.rolling1000)]
