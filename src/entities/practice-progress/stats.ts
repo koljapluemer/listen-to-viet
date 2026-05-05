@@ -38,6 +38,12 @@ export interface MatrixTopPair {
   recentAccuracy: number;
 }
 
+export interface PracticePairTarget {
+  kind: ConfusionKind;
+  correctKey: string;
+  distractorKey: string;
+}
+
 export interface MatrixSummary {
   attempts: number;
   correct: number;
@@ -110,6 +116,25 @@ const getPairKey = (kind: ConfusionKind, correctKey: string, distractorKey: stri
   `${kind}:${correctKey}->${distractorKey}`;
 
 const getRawAccuracy = (correct: number, attempts: number) => (attempts ? correct / attempts : null);
+
+const parsePairKey = (pairKey: string): PracticePairTarget | null => {
+  const [kind, keys] = pairKey.split(":");
+  const [correctKey, distractorKey] = keys?.split("->") ?? [];
+
+  if (
+    (kind !== "letter" && kind !== "tone") ||
+    !correctKey ||
+    !distractorKey
+  ) {
+    return null;
+  }
+
+  return {
+    kind,
+    correctKey,
+    distractorKey,
+  };
+};
 
 const getTrackedAnswerEvents = (events: PracticeEvent[]) =>
   events.filter(
@@ -443,4 +468,56 @@ export const chooseDistractorCandidate = (
       score: getCandidateScore(candidate, pairCounts, targetKind),
     }))
     .sort((left, right) => right.score - left.score)[0]?.candidate ?? null;
+};
+
+export const getWeakestRecentPairTarget = (events: PracticeEvent[]) => {
+  const trackedEvents = getTrackedAnswerEvents(events);
+  const pairCounts = getCandidatePairCounts(trackedEvents);
+  let weakestPair: (PracticePairTarget & {
+    recentAccuracy: number;
+    recentAttempts: number;
+    attempts: number;
+  }) | null = null;
+
+  for (const [pairKey, pair] of pairCounts.entries()) {
+    const target = parsePairKey(pairKey);
+    const recentStats = getRecentPairStats(pair);
+
+    if (!target || recentStats.recentAccuracy === null) {
+      continue;
+    }
+
+    const candidate: PracticePairTarget & {
+      recentAccuracy: number;
+      recentAttempts: number;
+      attempts: number;
+    } = {
+      ...target,
+      recentAccuracy: recentStats.recentAccuracy,
+      recentAttempts: recentStats.recentAttempts,
+      attempts: pair.attempts,
+    };
+
+    if (
+      !weakestPair ||
+      candidate.recentAccuracy < weakestPair.recentAccuracy ||
+      (candidate.recentAccuracy === weakestPair.recentAccuracy &&
+        candidate.recentAttempts > weakestPair.recentAttempts) ||
+      (candidate.recentAccuracy === weakestPair.recentAccuracy &&
+        candidate.recentAttempts === weakestPair.recentAttempts &&
+        candidate.attempts > weakestPair.attempts)
+    ) {
+      weakestPair = candidate;
+    }
+  }
+
+  if (!weakestPair) {
+    return null;
+  }
+
+  return {
+    kind: weakestPair.kind,
+    correctKey: weakestPair.correctKey,
+    distractorKey: weakestPair.distractorKey,
+  };
 };

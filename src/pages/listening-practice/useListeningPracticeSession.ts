@@ -20,8 +20,13 @@ import {
   type LearningRecord,
   type PracticeEvent,
   type PracticeRoundSelectionMode,
+  type PracticeSelectionMetaMode,
 } from "../../entities/practice-progress/model";
-import { chooseDistractorCandidate } from "../../entities/practice-progress/stats";
+import {
+  chooseDistractorCandidate,
+  getWeakestRecentPairTarget,
+  type PracticePairTarget,
+} from "../../entities/practice-progress/stats";
 
 export interface AnswerOption {
   label: string;
@@ -33,6 +38,9 @@ interface Round {
   candidate: DistractorCandidate;
   options: AnswerOption[];
   selectionMode: PracticeRoundSelectionMode;
+  metaMode: PracticeSelectionMetaMode;
+  metaBlockIndex: number;
+  metaPairTarget: PracticePairTarget | null;
 }
 
 interface SessionLearningRecord {
@@ -47,6 +55,7 @@ const MAX_WORDS = 5;
 const REVIEW_THRESHOLD = 0.7;
 const REVIEW_PROBABILITY = 0.8;
 const FULLY_RANDOM_ROUND_PROBABILITY = 0.5;
+const META_MODE_BLOCK_SIZE = 20;
 const INTERACTIVE_TAG_NAMES = new Set(["A", "AUDIO", "BUTTON", "INPUT", "SELECT", "TEXTAREA"]);
 
 const shuffle = <T>(items: T[]) => {
@@ -73,6 +82,9 @@ export const useListeningPracticeSession = () => {
   const currentListeningClip = ref<ReturnType<typeof toStoredClip> | null>(null);
   const currentListeningDistractor = ref<string | undefined>(undefined);
   const currentListeningSelectionMode = ref<PracticeRoundSelectionMode | undefined>(undefined);
+  const currentListeningMetaMode = ref<PracticeSelectionMetaMode | undefined>(undefined);
+  const currentListeningMetaBlockIndex = ref<number | undefined>(undefined);
+  const currentListeningMetaPairTarget = ref<PracticePairTarget | null>(null);
   const lastAudioPositionSeconds = ref<number | null>(null);
   const autoplayHint = ref("");
   const loadError = ref("");
@@ -91,7 +103,7 @@ export const useListeningPracticeSession = () => {
     return target.isContentEditable || INTERACTIVE_TAG_NAMES.has(target.tagName);
   };
 
-  const createRound = (clip: Clip): Round | null => {
+  const createRound = (clip: Clip, metaBlockIndex: number): Round | null => {
     const candidates = listDistractorCandidates(clip.transcript);
     const candidate = chooseDistractorCandidate(candidates, practiceEvents.value);
 
@@ -103,6 +115,9 @@ export const useListeningPracticeSession = () => {
       clip,
       candidate,
       selectionMode: "learningPrediction",
+      metaMode: "default",
+      metaBlockIndex,
+      metaPairTarget: null,
       options: shuffle([
         { label: clip.transcript, isCorrect: true },
         { label: candidate.label, isCorrect: false },
@@ -110,7 +125,7 @@ export const useListeningPracticeSession = () => {
     };
   };
 
-  const createRandomRound = (clip: Clip): Round | null => {
+  const createRandomRound = (clip: Clip, metaBlockIndex: number): Round | null => {
     const candidates = listDistractorCandidates(clip.transcript);
 
     if (!candidates.length) {
@@ -123,6 +138,9 @@ export const useListeningPracticeSession = () => {
       clip,
       candidate,
       selectionMode: "random",
+      metaMode: "default",
+      metaBlockIndex,
+      metaPairTarget: null,
       options: shuffle([
         { label: clip.transcript, isCorrect: true },
         { label: candidate.label, isCorrect: false },
@@ -142,6 +160,85 @@ export const useListeningPracticeSession = () => {
     }
 
     return clips.value[Math.floor(Math.random() * clips.value.length)];
+  };
+
+  const getCurrentMetaMode = (): { blockIndex: number; metaMode: PracticeSelectionMetaMode } => {
+    const completedExercises = practiceEvents.value.filter((event) => event.eventType === "answer").length;
+    const blockIndex = Math.floor(completedExercises / META_MODE_BLOCK_SIZE);
+
+    return {
+      blockIndex,
+      metaMode: blockIndex % 2 === 0 ? "default" : "weakestPairBidirectional",
+    };
+  };
+
+  const getPersistedMetaPairTarget = (blockIndex: number): PracticePairTarget | null => {
+    const matchingEvent = [...practiceEvents.value]
+      .reverse()
+      .find(
+        (event) =>
+          event.metaMode === "weakestPairBidirectional" &&
+          event.metaBlockIndex === blockIndex &&
+          event.metaPairKind &&
+          event.metaPairLeftKey &&
+          event.metaPairRightKey
+      );
+
+    if (!matchingEvent?.metaPairKind || !matchingEvent.metaPairLeftKey || !matchingEvent.metaPairRightKey) {
+      return null;
+    }
+
+    return {
+      kind: matchingEvent.metaPairKind,
+      correctKey: matchingEvent.metaPairLeftKey,
+      distractorKey: matchingEvent.metaPairRightKey,
+    };
+  };
+
+  const matchesBidirectionalPair = (candidate: DistractorCandidate, pairTarget: PracticePairTarget) => {
+    const correctKey = candidate.kind === "letter" ? candidate.correctLetter : candidate.correctTone;
+    const distractorKey = candidate.kind === "letter" ? candidate.distractorLetter : candidate.distractorTone;
+
+    if (!correctKey || !distractorKey || candidate.kind !== pairTarget.kind) {
+      return false;
+    }
+
+    return (
+      (correctKey === pairTarget.correctKey && distractorKey === pairTarget.distractorKey) ||
+      (correctKey === pairTarget.distractorKey && distractorKey === pairTarget.correctKey)
+    );
+  };
+
+  const createWeakestPairRound = (
+    pairTarget: PracticePairTarget,
+    metaBlockIndex: number
+  ): Round | null => {
+    for (const clip of shuffle(clips.value)) {
+      const candidates = listDistractorCandidates(clip.transcript).filter((candidate) =>
+        matchesBidirectionalPair(candidate, pairTarget)
+      );
+
+      if (!candidates.length) {
+        continue;
+      }
+
+      const candidate = candidates[Math.floor(Math.random() * candidates.length)];
+
+      return {
+        clip,
+        candidate,
+        selectionMode: "random",
+        metaMode: "weakestPairBidirectional",
+        metaBlockIndex,
+        metaPairTarget: pairTarget,
+        options: shuffle([
+          { label: clip.transcript, isCorrect: true },
+          { label: candidate.label, isCorrect: false },
+        ]),
+      };
+    }
+
+    return null;
   };
 
   const replayAudio = async () => {
@@ -167,6 +264,9 @@ export const useListeningPracticeSession = () => {
     currentListeningClip.value = null;
     currentListeningDistractor.value = undefined;
     currentListeningSelectionMode.value = undefined;
+    currentListeningMetaMode.value = undefined;
+    currentListeningMetaBlockIndex.value = undefined;
+    currentListeningMetaPairTarget.value = null;
     lastAudioPositionSeconds.value = null;
   };
 
@@ -196,6 +296,9 @@ export const useListeningPracticeSession = () => {
     currentListeningClip.value = toStoredClip(round.value.clip);
     currentListeningDistractor.value = round.value.candidate.label;
     currentListeningSelectionMode.value = round.value.selectionMode;
+    currentListeningMetaMode.value = round.value.metaMode;
+    currentListeningMetaBlockIndex.value = round.value.metaBlockIndex;
+    currentListeningMetaPairTarget.value = round.value.metaPairTarget;
     lastAudioPositionSeconds.value = audio.currentTime;
   };
 
@@ -220,6 +323,9 @@ export const useListeningPracticeSession = () => {
     const clip = currentListeningClip.value;
     const distractor = currentListeningDistractor.value;
     const selectionMode = currentListeningSelectionMode.value;
+    const metaMode = currentListeningMetaMode.value;
+    const metaBlockIndex = currentListeningMetaBlockIndex.value;
+    const metaPairTarget = currentListeningMetaPairTarget.value;
 
     resetAudioPlaybackTracking();
 
@@ -232,6 +338,11 @@ export const useListeningPracticeSession = () => {
       clip,
       timestamp: new Date().toISOString(),
       selectionMode,
+      metaMode,
+      metaBlockIndex,
+      metaPairKind: metaPairTarget?.kind,
+      metaPairLeftKey: metaPairTarget?.correctKey,
+      metaPairRightKey: metaPairTarget?.distractorKey,
       distractor,
       duration_ms: listenedDurationMs,
     };
@@ -262,13 +373,23 @@ export const useListeningPracticeSession = () => {
     loadError.value = "";
 
     let nextRound: Round | null = null;
-    const useFullyRandomRound = Math.random() < FULLY_RANDOM_ROUND_PROBABILITY;
+    const { blockIndex, metaMode } = getCurrentMetaMode();
 
-    for (let attempt = 0; attempt < 10 && !nextRound; attempt += 1) {
-      const clip = useFullyRandomRound
-        ? clips.value[Math.floor(Math.random() * clips.value.length)]
-        : pickNextClip();
-      nextRound = useFullyRandomRound ? createRandomRound(clip) : createRound(clip);
+    if (metaMode === "default") {
+      const useFullyRandomRound = Math.random() < FULLY_RANDOM_ROUND_PROBABILITY;
+
+      for (let attempt = 0; attempt < 10 && !nextRound; attempt += 1) {
+        const clip = useFullyRandomRound
+          ? clips.value[Math.floor(Math.random() * clips.value.length)]
+          : pickNextClip();
+        nextRound = useFullyRandomRound ? createRandomRound(clip, blockIndex) : createRound(clip, blockIndex);
+      }
+    } else {
+      const pairTarget = getPersistedMetaPairTarget(blockIndex) ?? getWeakestRecentPairTarget(practiceEvents.value);
+
+      if (pairTarget) {
+        nextRound = createWeakestPairRound(pairTarget, blockIndex);
+      }
     }
 
     if (!nextRound) {
@@ -284,6 +405,11 @@ export const useListeningPracticeSession = () => {
       clip: toStoredClip(nextRound.clip),
       timestamp: new Date().toISOString(),
       selectionMode: nextRound.selectionMode,
+      metaMode: nextRound.metaMode,
+      metaBlockIndex: nextRound.metaBlockIndex,
+      metaPairKind: nextRound.metaPairTarget?.kind,
+      metaPairLeftKey: nextRound.metaPairTarget?.correctKey,
+      metaPairRightKey: nextRound.metaPairTarget?.distractorKey,
       distractor: nextRound.candidate.label,
     };
 
@@ -343,6 +469,11 @@ export const useListeningPracticeSession = () => {
         clip: toStoredClip(round.value.clip),
         timestamp: new Date().toISOString(),
         selectionMode: round.value.selectionMode,
+        metaMode: round.value.metaMode,
+        metaBlockIndex: round.value.metaBlockIndex,
+        metaPairKind: round.value.metaPairTarget?.kind,
+        metaPairLeftKey: round.value.metaPairTarget?.correctKey,
+        metaPairRightKey: round.value.metaPairTarget?.distractorKey,
         distractor: round.value.candidate.label,
         duration_ms: taskStartTime.value === null ? null : Date.now() - taskStartTime.value,
         selectedTranscript: option.label,

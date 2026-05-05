@@ -4,6 +4,7 @@ type DbConfusionKind = "letter" | "tone";
 type DbLetterKey = "a" | "ă" | "â" | "e" | "ê" | "i" | "o" | "ô" | "ơ" | "u" | "ư" | "y" | "d" | "đ";
 type DbToneKey = "ngang" | "huyen" | "sac" | "hoi" | "nga" | "nang";
 type DbPracticeRoundSelectionMode = "random" | "learningPrediction";
+type DbPracticeSelectionMetaMode = "default" | "weakestPairBidirectional";
 
 export interface DbStoredClip {
   filename: string;
@@ -16,6 +17,11 @@ export interface DbPracticeEventRow {
   clip: DbStoredClip;
   timestamp: string;
   selectionMode?: DbPracticeRoundSelectionMode;
+  metaMode?: DbPracticeSelectionMetaMode;
+  metaBlockIndex?: number;
+  metaPairKind?: DbConfusionKind;
+  metaPairLeftKey?: string;
+  metaPairRightKey?: string;
   distractor?: string;
   duration_ms?: number | null;
   selectedTranscript?: string;

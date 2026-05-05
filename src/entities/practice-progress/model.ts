@@ -14,12 +14,18 @@ export interface StoredClip {
 }
 
 export type PracticeRoundSelectionMode = "random" | "learningPrediction";
+export type PracticeSelectionMetaMode = "default" | "weakestPairBidirectional";
 
 export interface PracticeEvent {
   eventType: "roundStarted" | "answer" | "audioListened";
   clip: StoredClip;
   timestamp: string;
   selectionMode?: PracticeRoundSelectionMode;
+  metaMode?: PracticeSelectionMetaMode;
+  metaBlockIndex?: number;
+  metaPairKind?: ConfusionKind;
+  metaPairLeftKey?: string;
+  metaPairRightKey?: string;
   distractor?: string;
   duration_ms?: number | null;
   selectedTranscript?: string;
@@ -76,6 +82,11 @@ export const clonePracticeEvent = (event: PracticeEvent): PracticeEvent => ({
   clip: cloneStoredClip(event.clip),
   timestamp: event.timestamp,
   selectionMode: event.selectionMode,
+  metaMode: event.metaMode,
+  metaBlockIndex: event.metaBlockIndex,
+  metaPairKind: event.metaPairKind,
+  metaPairLeftKey: event.metaPairLeftKey,
+  metaPairRightKey: event.metaPairRightKey,
   distractor: event.distractor,
   duration_ms: event.duration_ms,
   selectedTranscript: event.selectedTranscript,
