@@ -5,7 +5,6 @@ defineProps<{
   options: AnswerOption[];
   clipFilename: string;
   disabledButtonIndex: number | null;
-  highlightChange: boolean;
   changedCharacterIndex: number;
   splitLabel: (label: string) => string[];
 }>();
@@ -33,7 +32,7 @@ defineEmits<{
         <span
           v-for="(character, characterIndex) in splitLabel(option.label)"
           :key="`${option.label}-${characterIndex}`"
-          :class="{ 'text-marker': highlightChange && characterIndex === changedCharacterIndex }"
+          :class="{ 'text-marker': characterIndex === changedCharacterIndex }"
         >
           {{ character }}
         </span>

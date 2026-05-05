@@ -88,7 +88,6 @@ export const useListeningPracticeSession = () => {
   const lastAudioPositionSeconds = ref<number | null>(null);
   const autoplayHint = ref("");
   const loadError = ref("");
-  const highlightChange = ref(false);
 
   const answerOptions = computed(() => round.value?.options ?? []);
   const changedCharacterIndex = computed(() => round.value?.candidate.changedIndex ?? -1);
@@ -592,7 +591,6 @@ export const useListeningPracticeSession = () => {
     handleAudioPlay,
     handleAudioSeek,
     handleAudioTimeUpdate,
-    highlightChange,
     loadError,
     phase,
     replayAudio,

@@ -14,7 +14,6 @@ const {
   handleAudioPlay,
   handleAudioSeek,
   handleAudioTimeUpdate,
-  highlightChange,
   loadError,
   phase,
   replayAudio,
@@ -90,22 +89,10 @@ void audioRef;
             </div>
           </div>
 
-          <label
-            class="ml-auto inline-flex items-center gap-2 text-xs text-base-content/60"
-          >
-            <span>mark</span>
-            <input
-              v-model="highlightChange"
-              type="checkbox"
-              class="toggle toggle-xs"
-            >
-          </label>
-
           <PracticeRoundChoices
             :options="answerOptions"
             :clip-filename="round.clip.filename"
             :disabled-button-index="disabledButtonIndex"
-            :highlight-change="highlightChange"
             :changed-character-index="changedCharacterIndex"
             :split-label="splitLabel"
             @select="handleAnswer"
