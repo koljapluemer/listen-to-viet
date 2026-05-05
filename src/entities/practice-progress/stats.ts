@@ -420,7 +420,7 @@ export const getPracticeStatsSnapshot = (events: PracticeEvent[]): PracticeStats
   };
 };
 
-export const getAccuracyTrialSeries = (events: PracticeEvent[], visibleWindow = 100) => {
+export const getAccuracyTrialSeries = (events: PracticeEvent[], visibleWindow?: number) => {
   const answerEvents = getAccuracyAnswerEvents(events);
   const trials: AccuracyTrialPoint[] = [];
   let rolling10Correct = 0;
@@ -447,7 +447,7 @@ export const getAccuracyTrialSeries = (events: PracticeEvent[], visibleWindow = 
     });
   });
 
-  return trials.slice(-visibleWindow);
+  return typeof visibleWindow === "number" ? trials.slice(-visibleWindow) : trials;
 };
 
 export const chooseDistractorCandidate = (

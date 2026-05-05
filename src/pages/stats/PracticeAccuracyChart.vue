@@ -10,60 +10,85 @@ import {
   type ChartData,
   type ChartOptions,
 } from "chart.js";
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { Line } from "vue-chartjs";
 import type { AccuracyTrialPoint } from "../../entities/practice-progress/stats";
 
 ChartJS.register(Filler, Legend, LineElement, LinearScale, PointElement, Tooltip);
 
+const RECENT_TRIAL_WINDOW = 100;
+const MARKER_Y_VALUE = 0.5;
+
+type AccuracyRange = "recent" | "all";
+
 const props = defineProps<{
   trials: AccuracyTrialPoint[];
 }>();
 
+const range = ref<AccuracyRange>("recent");
+
+const hasTrials = computed(() => props.trials.length > 0);
+const isRecentRange = computed(() => range.value === "recent");
+
+const visibleTrials = computed(() =>
+  isRecentRange.value ? props.trials.slice(-RECENT_TRIAL_WINDOW) : props.trials
+);
+
+const firstVisibleTrialNumber = computed(() => visibleTrials.value[0]?.trialNumber);
+const lastVisibleTrialNumber = computed(
+  () => visibleTrials.value[visibleTrials.value.length - 1]?.trialNumber
+);
+
+const summaryLabel = computed(() =>
+  isRecentRange.value
+    ? `Last ${Math.min(props.trials.length, RECENT_TRIAL_WINDOW)} trials`
+    : `${props.trials.length} total trials`
+);
+
+const chartKey = computed(
+  () => `${range.value}-${firstVisibleTrialNumber.value ?? 0}-${lastVisibleTrialNumber.value ?? 0}`
+);
+
+const markerDataset = computed(() => ({
+  label: "Individual trials",
+  data: visibleTrials.value.map((trial) => ({
+    x: trial.trialNumber,
+    y: MARKER_Y_VALUE * 100,
+  })),
+  borderWidth: 0,
+  pointBackgroundColor: visibleTrials.value.map((trial) =>
+    trial.isCorrect ? "rgb(34, 197, 94)" : "rgb(239, 68, 68)"
+  ),
+  pointBorderColor: visibleTrials.value.map((trial) =>
+    trial.isCorrect ? "rgb(22, 101, 52)" : "rgb(153, 27, 27)"
+  ),
+  pointHoverRadius: 5,
+  pointRadius: 4,
+  showLine: false,
+}));
+
+const toRollingDataset = (
+  label: string,
+  borderColor: string,
+  getValue: (trial: AccuracyTrialPoint) => number
+) => ({
+  label,
+  data: visibleTrials.value.map((trial) => ({
+    x: trial.trialNumber,
+    y: Math.round(getValue(trial) * 1000) / 10,
+  })),
+  borderColor,
+  borderWidth: 3,
+  cubicInterpolationMode: "monotone" as const,
+  pointRadius: 0,
+  tension: 0.3,
+});
+
 const chartData = computed<ChartData<"line">>(() => ({
   datasets: [
-    {
-      label: "Last 100 trials",
-      data: props.trials.map((trial) => ({
-        x: trial.trialNumber,
-        y: 0.5,
-      })),
-      borderWidth: 0,
-      pointBackgroundColor: props.trials.map((trial) =>
-        trial.isCorrect ? "rgb(34, 197, 94)" : "rgb(239, 68, 68)"
-      ),
-      pointBorderColor: props.trials.map((trial) =>
-        trial.isCorrect ? "rgb(22, 101, 52)" : "rgb(153, 27, 27)"
-      ),
-      pointHoverRadius: 5,
-      pointRadius: 4,
-      showLine: false,
-      yAxisID: "markers",
-    },
-    {
-      label: "Rolling 10",
-      data: props.trials.map((trial) => ({
-        x: trial.trialNumber,
-        y: Math.round(trial.rolling10 * 1000) / 10,
-      })),
-      borderColor: "rgb(59, 130, 246)",
-      borderWidth: 3,
-      cubicInterpolationMode: "monotone",
-      pointRadius: 0,
-      tension: 0.3,
-    },
-    {
-      label: "Rolling 100",
-      data: props.trials.map((trial) => ({
-        x: trial.trialNumber,
-        y: Math.round(trial.rolling100 * 1000) / 10,
-      })),
-      borderColor: "rgb(245, 158, 11)",
-      borderWidth: 3,
-      cubicInterpolationMode: "monotone",
-      pointRadius: 0,
-      tension: 0.3,
-    },
+    ...(isRecentRange.value ? [markerDataset.value] : []),
+    toRollingDataset("Rolling 10", "rgb(59, 130, 246)", (trial) => trial.rolling10),
+    toRollingDataset("Rolling 100", "rgb(245, 158, 11)", (trial) => trial.rolling100),
   ],
 }));
 
@@ -87,8 +112,8 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
           return items[0] ? `Trial ${items[0].parsed.x}` : "";
         },
         label(item) {
-          if (item.datasetIndex === 0) {
-            return props.trials[item.dataIndex]?.isCorrect ? "Correct" : "Incorrect";
+          if (isRecentRange.value && item.dataset.label === "Individual trials") {
+            return visibleTrials.value[item.dataIndex]?.isCorrect ? "Correct" : "Incorrect";
           }
 
           const value = item.parsed.y ?? 0;
@@ -102,6 +127,8 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
       grid: {
         display: false,
       },
+      max: lastVisibleTrialNumber.value,
+      min: firstVisibleTrialNumber.value,
       ticks: {
         maxRotation: 0,
       },
@@ -124,14 +151,6 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
         text: "Accuracy",
       },
     },
-    markers: {
-      display: false,
-      grid: {
-        display: false,
-      },
-      max: 1,
-      min: 0,
-    },
   },
 }));
 </script>
@@ -142,16 +161,40 @@ const chartOptions = computed<ChartOptions<"line">>(() => ({
       <h2 class="text-lg font-semibold">
         Accuracy over time
       </h2>
-      <span class="text-sm text-base-content/70">
-        Last {{ trials.length }} trials
-      </span>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-base-content/70">
+          {{ summaryLabel }}
+        </span>
+        <div
+          v-if="hasTrials"
+          class="join"
+        >
+          <button
+            type="button"
+            class="btn btn-sm join-item"
+            :class="{ 'btn-active': isRecentRange }"
+            @click="range = 'recent'"
+          >
+            Last 100
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm join-item"
+            :class="{ 'btn-active': range === 'all' }"
+            @click="range = 'all'"
+          >
+            All-time
+          </button>
+        </div>
+      </div>
     </div>
 
     <div
-      v-if="trials.length"
+      v-if="hasTrials"
       class="h-80"
     >
       <Line
+        :key="chartKey"
         :data="chartData"
         :options="chartOptions"
       />
