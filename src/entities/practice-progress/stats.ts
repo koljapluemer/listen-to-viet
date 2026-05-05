@@ -65,6 +65,7 @@ export interface AccuracyTrialPoint {
   isCorrect: boolean;
   rolling10: number;
   rolling100: number;
+  rolling1000: number;
 }
 
 export interface PracticeOverviewStats {
@@ -425,11 +426,13 @@ export const getAccuracyTrialSeries = (events: PracticeEvent[], visibleWindow?: 
   const trials: AccuracyTrialPoint[] = [];
   let rolling10Correct = 0;
   let rolling100Correct = 0;
+  let rolling1000Correct = 0;
 
   answerEvents.forEach((event, index) => {
     const value = event.isCorrect ? 1 : 0;
     rolling10Correct += value;
     rolling100Correct += value;
+    rolling1000Correct += value;
 
     if (index >= 10) {
       rolling10Correct -= answerEvents[index - 10].isCorrect ? 1 : 0;
@@ -439,11 +442,16 @@ export const getAccuracyTrialSeries = (events: PracticeEvent[], visibleWindow?: 
       rolling100Correct -= answerEvents[index - 100].isCorrect ? 1 : 0;
     }
 
+    if (index >= 1000) {
+      rolling1000Correct -= answerEvents[index - 1000].isCorrect ? 1 : 0;
+    }
+
     trials.push({
       trialNumber: index + 1,
       isCorrect: event.isCorrect,
       rolling10: rolling10Correct / Math.min(index + 1, 10),
       rolling100: rolling100Correct / Math.min(index + 1, 100),
+      rolling1000: rolling1000Correct / Math.min(index + 1, 1000),
     });
   });
 
