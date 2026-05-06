@@ -41,6 +41,36 @@ const props = defineProps<{
   days: DailyAccuracyPoint[];
 }>();
 
+type ChartPalette = {
+  axis: string;
+  axisBorder: string;
+  errorBar: string;
+  grid: string;
+  primary: string;
+  surface: string;
+  tooltipBackground: string;
+};
+
+const readThemeColor = (propertyName: string) => {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(propertyName).trim();
+
+  if (!value) {
+    throw new Error(`Missing Daisy theme variable: ${propertyName}`);
+  }
+
+  return value;
+};
+
+const chartPalette = computed<ChartPalette>(() => ({
+  axis: readThemeColor("--color-base-content"),
+  axisBorder: readThemeColor("--color-base-300"),
+  errorBar: readThemeColor("--color-base-content"),
+  grid: readThemeColor("--color-base-300"),
+  primary: readThemeColor("--color-primary"),
+  surface: readThemeColor("--color-base-100"),
+  tooltipBackground: readThemeColor("--color-base-100"),
+}));
+
 const completeDays = computed<DailyAccuracyPoint[]>(() =>
   fillDailyRange(props.days, (day) => ({
     accuracy: null,
@@ -63,7 +93,7 @@ const chartData = computed<ChartData<"lineWithErrorBars", IErrorBarYDataPoint[],
   labels: chartLabels.value,
   datasets: [
     {
-      borderColor: "rgb(37, 99, 235)",
+      borderColor: chartPalette.value.primary,
       data: completeDays.value.map((point) =>
         point.accuracy === null ||
         point.confidenceLow95 === null ||
@@ -75,19 +105,19 @@ const chartData = computed<ChartData<"lineWithErrorBars", IErrorBarYDataPoint[],
               yMin: point.confidenceLow95 * 100,
             } satisfies IErrorBarYDataPoint)
       ),
-      errorBarColor: "rgba(15, 23, 42, 0.95)",
+      errorBarColor: chartPalette.value.errorBar,
       errorBarLineWidth: 2.5,
-      errorBarWhiskerColor: "rgba(15, 23, 42, 0.95)",
+      errorBarWhiskerColor: chartPalette.value.errorBar,
       errorBarWhiskerLineWidth: 2.5,
       errorBarWhiskerSize: 10,
       label: "Accuracy",
-      pointBackgroundColor: "rgb(37, 99, 235)",
-      pointBorderColor: "rgb(29, 78, 216)",
-      pointBorderWidth: 1.5,
+      pointBackgroundColor: chartPalette.value.primary,
+      pointBorderColor: chartPalette.value.surface,
+      pointBorderWidth: 2.5,
       pointHoverRadius: 7,
-      pointRadius: 6,
+      pointRadius: 15,
       pointRotation: 0,
-      pointStyle: "line",
+      pointStyle: "circle",
       showLine: false,
       spanGaps: false,
     },
@@ -102,6 +132,12 @@ const chartOptions = computed<ChartOptions<"lineWithErrorBars">>(() => ({
       display: false,
     },
     tooltip: {
+      backgroundColor: chartPalette.value.tooltipBackground,
+      bodyColor: chartPalette.value.axis,
+      borderColor: chartPalette.value.axisBorder,
+      borderWidth: 1,
+      displayColors: false,
+      titleColor: chartPalette.value.axis,
       callbacks: {
         label(item) {
           const point = completeDays.value[item.dataIndex];
@@ -136,24 +172,35 @@ const chartOptions = computed<ChartOptions<"lineWithErrorBars">>(() => ({
   },
   scales: {
     x: {
+      border: {
+        color: chartPalette.value.axisBorder,
+      },
       grid: {
         display: false,
       },
       offset: true,
+      ticks: {
+        color: chartPalette.value.axis,
+      },
     },
     y: {
+      border: {
+        color: chartPalette.value.axisBorder,
+      },
       max: 100,
       min: 0,
       ticks: {
         callback(value) {
           return `${value}%`;
         },
+        color: chartPalette.value.axis,
         stepSize: 25,
       },
       grid: {
-        color: "rgba(148, 163, 184, 0.2)",
+        color: chartPalette.value.grid,
       },
       title: {
+        color: chartPalette.value.axis,
         display: true,
         text: "Accuracy",
       },

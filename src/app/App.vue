@@ -1,5 +1,8 @@
 <template>
-  <div class="flex min-h-dvh flex-col bg-base-200">
+  <div
+    data-theme="dark"
+    class="flex min-h-dvh flex-col bg-base-200"
+  >
     <header class="border-b border-base-300 bg-base-100">
       <div class="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
         <p class="text-base font-semibold">

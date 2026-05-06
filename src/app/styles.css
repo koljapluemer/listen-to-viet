@@ -2,13 +2,14 @@
 @plugin "daisyui";
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 html,
 body,
 #app {
   min-height: 100%;
+  background-color: var(--color-base-200);
 }
 
 body {
