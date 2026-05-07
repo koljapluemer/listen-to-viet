@@ -23,15 +23,22 @@ export const LETTER_KEYS = [
   "đ",
 ] as const;
 
-export const TONE_KEYS = ["ngang", "huyen", "sac", "hoi", "nga", "nang"] as const;
-export const LETTER_COMPARISON_GROUPS = [
-  ["a", "ă", "â"],
-  ["e", "ê"],
-  ["i", "y"],
-  ["o", "ô", "ơ"],
-  ["u", "ư"],
-  ["d", "đ"],
+export const ACTIVE_LETTER_KEYS = [
+  "a",
+  "ă",
+  "â",
+  "e",
+  "ê",
+  "i",
+  "o",
+  "ô",
+  "ơ",
+  "u",
+  "ư",
+  "y",
 ] as const;
+
+export const TONE_KEYS = ["ngang", "huyen", "sac", "hoi", "nga", "nang"] as const;
 
 export type LetterKey = (typeof LETTER_KEYS)[number];
 export type ToneKey = (typeof TONE_KEYS)[number];
@@ -54,6 +61,11 @@ interface CharacterMetadata {
   tone: ToneKey | null;
 }
 
+interface TokenSpan {
+  start: number;
+  end: number;
+}
+
 const vowelFamilies = [
   ["a", "à", "á", "ả", "ã", "ạ"],
   ["ă", "ằ", "ắ", "ẳ", "ẵ", "ặ"],
@@ -69,18 +81,74 @@ const vowelFamilies = [
   ["y", "ỳ", "ý", "ỷ", "ỹ", "ỵ"],
 ] as const satisfies readonly (readonly string[])[];
 
-const consonantFamilies = [["d", "đ"]] as const satisfies readonly (readonly string[])[];
-
-const confusableToneGroups = [
-  [vowelFamilies[0], vowelFamilies[1], vowelFamilies[2]],
-  [vowelFamilies[3], vowelFamilies[4]],
-  [vowelFamilies[5], vowelFamilies[11]],
-  [vowelFamilies[6], vowelFamilies[7], vowelFamilies[8]],
-  [vowelFamilies[9], vowelFamilies[10]],
-] as const;
-
 const transcriptCleanupPattern = /(^|\s)-N(?=\s|$)/g;
 const wordSplitPattern = /\s+/;
+const alphabeticCharacterPattern = /^\p{L}$/u;
+const vietnameseAlphabetCharacters = [
+  "a",
+  "ă",
+  "â",
+  "b",
+  "c",
+  "d",
+  "đ",
+  "e",
+  "ê",
+  "g",
+  "h",
+  "i",
+  "k",
+  "l",
+  "m",
+  "n",
+  "o",
+  "ô",
+  "ơ",
+  "p",
+  "q",
+  "r",
+  "s",
+  "t",
+  "u",
+  "ư",
+  "v",
+  "x",
+  "y",
+] as const;
+const directlyRemovedLetterPairs = new Set(["i->y", "y->i"]);
+
+const buildCharacterSet = (characters: readonly string[]) => {
+  const set = new Set<string>();
+
+  characters.forEach((character) => {
+    set.add(character);
+    set.add(character.toUpperCase());
+  });
+
+  return set;
+};
+
+const toneMarkedCharacterSet = buildCharacterSet(vowelFamilies.flatMap((family) => family.slice(1)));
+const definitelyVietnameseCharacterSet = buildCharacterSet([
+  "ă",
+  "â",
+  "ê",
+  "ô",
+  "ơ",
+  "ư",
+  "đ",
+  ...vowelFamilies.flatMap((family) => family.slice(1)),
+]);
+const vietnameseAlphabetCharacterSet = buildCharacterSet(vietnameseAlphabetCharacters);
+const activeLetterKeySet = new Set<string>(ACTIVE_LETTER_KEYS);
+
+export function isSupportedLetterPair(correctLetter: string, distractorLetter: string) {
+  if (!activeLetterKeySet.has(correctLetter) || !activeLetterKeySet.has(distractorLetter)) {
+    return false;
+  }
+
+  return !directlyRemovedLetterPairs.has(`${correctLetter}->${distractorLetter}`);
+}
 
 const characterMetadataMap = (() => {
   const map = new Map<string, CharacterMetadata>();
@@ -95,15 +163,6 @@ const characterMetadataMap = (() => {
       });
     });
   }
-
-  consonantFamilies.forEach((family) => {
-    family.forEach((character) => {
-      map.set(character, {
-        letter: character as LetterKey,
-        tone: null,
-      });
-    });
-  });
 
   for (const [character, metadata] of [...map.entries()]) {
     map.set(character.toUpperCase(), metadata);
@@ -133,28 +192,26 @@ const alternativeMap = (() => {
     }
   }
 
-  for (const group of confusableToneGroups) {
-    for (let familyIndex = 0; familyIndex < group.length; familyIndex += 1) {
-      const family = group[familyIndex];
+  for (let familyIndex = 0; familyIndex < vowelFamilies.length; familyIndex += 1) {
+    const family = vowelFamilies[familyIndex];
+    const sourceLetter = family[0];
 
-      for (let toneIndex = 0; toneIndex < family.length; toneIndex += 1) {
-        const source = family[toneIndex];
+    for (let toneIndex = 0; toneIndex < family.length; toneIndex += 1) {
+      const source = family[toneIndex];
 
-        for (let otherFamilyIndex = 0; otherFamilyIndex < group.length; otherFamilyIndex += 1) {
-          if (otherFamilyIndex === familyIndex) {
-            continue;
-          }
-
-          addAlternative(source, group[otherFamilyIndex][toneIndex]);
+      for (let otherFamilyIndex = 0; otherFamilyIndex < vowelFamilies.length; otherFamilyIndex += 1) {
+        if (otherFamilyIndex === familyIndex) {
+          continue;
         }
-      }
-    }
-  }
 
-  for (const family of consonantFamilies) {
-    for (const source of family) {
-      for (const candidate of family) {
-        addAlternative(source, candidate);
+        const candidateFamily = vowelFamilies[otherFamilyIndex];
+        const candidateLetter = candidateFamily[0];
+
+        if (!isSupportedLetterPair(sourceLetter, candidateLetter)) {
+          continue;
+        }
+
+        addAlternative(source, candidateFamily[toneIndex]);
       }
     }
   }
@@ -183,6 +240,66 @@ const shuffle = <T>(items: T[]): T[] => {
   return copy;
 };
 
+const isAlphabeticCharacter = (character: string) => alphabeticCharacterPattern.test(character);
+
+const getTokenSpans = (characters: string[]) => {
+  const spans: TokenSpan[] = [];
+  let tokenStart: number | null = null;
+
+  characters.forEach((character, index) => {
+    if (isAlphabeticCharacter(character)) {
+      if (tokenStart === null) {
+        tokenStart = index;
+      }
+
+      return;
+    }
+
+    if (tokenStart !== null) {
+      spans.push({
+        start: tokenStart,
+        end: index,
+      });
+      tokenStart = null;
+    }
+  });
+
+  if (tokenStart !== null) {
+    spans.push({
+      start: tokenStart,
+      end: characters.length,
+    });
+  }
+
+  return spans;
+};
+
+const getTokenSpanForIndex = (tokenSpans: TokenSpan[], index: number) => {
+  for (const span of tokenSpans) {
+    if (index >= span.start && index < span.end) {
+      return span;
+    }
+  }
+
+  return null;
+};
+
+const isVietnameseConfirmedToken = (token: string) =>
+  [...token].some((character) => definitelyVietnameseCharacterSet.has(character));
+
+const hasOnlyVietnameseAlphabetCharacters = (token: string) =>
+  [...token].every(
+    (character) => !isAlphabeticCharacter(character) || vietnameseAlphabetCharacterSet.has(character)
+  );
+
+const getToneMarkedCharacterCount = (token: string) =>
+  [...token].filter((character) => toneMarkedCharacterSet.has(character)).length;
+
+const isValidMutatedToken = (token: string) =>
+  isVietnameseConfirmedToken(token) &&
+  hasOnlyVietnameseAlphabetCharacters(token) &&
+  getToneMarkedCharacterCount(token) <= 1;
+
 const getCharacterMetadata = (character: string) => characterMetadataMap.get(character) ?? null;
 
 const getConfusionKind = (
@@ -190,7 +307,7 @@ const getConfusionKind = (
   candidateMetadata: CharacterMetadata
 ): ConfusionKind | null => {
   if (sourceMetadata.letter !== candidateMetadata.letter) {
-    return "letter";
+    return isSupportedLetterPair(sourceMetadata.letter, candidateMetadata.letter) ? "letter" : null;
   }
 
   if (sourceMetadata.tone !== null && candidateMetadata.tone !== null) {
@@ -208,33 +325,44 @@ export const countWords = (value: string) => {
   return normalized ? normalized.split(" ").length : 0;
 };
 
-export const canGenerateDistractor = (transcript: string) =>
-  [...normalizeTranscript(transcript)].some((character) => alternativeMap.has(character));
-
-export const listDistractorCandidates = (transcript: string) => {
+const listDistractorCandidatesInternal = (transcript: string, stopAfterFirst = false) => {
   const normalizedTranscript = normalizeTranscript(transcript);
   const characters = [...normalizedTranscript];
+  const tokenSpans = getTokenSpans(characters);
   const candidates: DistractorCandidate[] = [];
 
-  characters.forEach((character, changedIndex) => {
+  for (let changedIndex = 0; changedIndex < characters.length; changedIndex += 1) {
+    const character = characters[changedIndex];
     const sourceMetadata = getCharacterMetadata(character);
     const alternatives = alternativeMap.get(character);
 
     if (!sourceMetadata || !alternatives?.length) {
-      return;
+      continue;
     }
 
-    alternatives.forEach((alternative) => {
+    const tokenSpan = getTokenSpanForIndex(tokenSpans, changedIndex);
+
+    if (!tokenSpan) {
+      continue;
+    }
+
+    const sourceToken = characters.slice(tokenSpan.start, tokenSpan.end).join("");
+
+    if (!isVietnameseConfirmedToken(sourceToken)) {
+      continue;
+    }
+
+    for (const alternative of alternatives) {
       const candidateMetadata = getCharacterMetadata(alternative);
 
       if (!candidateMetadata) {
-        return;
+        continue;
       }
 
       const kind = getConfusionKind(sourceMetadata, candidateMetadata);
 
       if (!kind) {
-        return;
+        continue;
       }
 
       const mutated = [...characters];
@@ -242,7 +370,13 @@ export const listDistractorCandidates = (transcript: string) => {
       const label = mutated.join("");
 
       if (label === normalizedTranscript) {
-        return;
+        continue;
+      }
+
+      const mutatedToken = mutated.slice(tokenSpan.start, tokenSpan.end).join("");
+
+      if (!isValidMutatedToken(mutatedToken)) {
+        continue;
       }
 
       candidates.push({
@@ -256,11 +390,21 @@ export const listDistractorCandidates = (transcript: string) => {
         correctTone: sourceMetadata.tone,
         distractorTone: candidateMetadata.tone,
       });
-    });
-  });
 
-  return shuffle(candidates);
+      if (stopAfterFirst) {
+        return candidates;
+      }
+    }
+  }
+
+  return candidates;
 };
+
+export const canGenerateDistractor = (transcript: string) =>
+  listDistractorCandidatesInternal(transcript, true).length > 0;
+
+export const listDistractorCandidates = (transcript: string) =>
+  shuffle(listDistractorCandidatesInternal(transcript));
 
 export const generateDistractor = (transcript: string) => listDistractorCandidates(transcript)[0]?.label ?? null;
 

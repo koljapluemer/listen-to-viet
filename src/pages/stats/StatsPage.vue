@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { LETTER_COMPARISON_GROUPS } from "../../entities/listening-clip/model";
 import PracticeAccuracyChart from "./PracticeAccuracyChart.vue";
 import PracticeDailyAccuracyChart from "./PracticeDailyAccuracyChart.vue";
 import PracticeDailyVolumeChart from "./PracticeDailyVolumeChart.vue";
@@ -173,19 +172,10 @@ const handleImportChange = async (event: Event) => {
         v-if="trackedConfusionAttempts > 0"
         class="space-y-4"
       >
-        <h2 class="text-xl font-semibold">
-          Letter confusions
-        </h2>
-
-        <div class="grid gap-6 xl:grid-cols-2">
-          <PracticeStatsMatrix
-            v-for="group in LETTER_COMPARISON_GROUPS"
-            :key="group.join('-')"
-            :title="group.join(' / ')"
-            :summary="stats.letter"
-            :keys="[...group]"
-          />
-        </div>
+        <PracticeStatsMatrix
+          title="Letter confusions"
+          :summary="stats.letter"
+        />
 
         <PracticeStatsMatrix
           title="Tone confusions"

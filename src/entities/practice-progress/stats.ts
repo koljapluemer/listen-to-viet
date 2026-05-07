@@ -2,7 +2,7 @@ import type {
   ConfusionKind,
   DistractorCandidate,
 } from "../listening-clip/model";
-import { LETTER_KEYS, TONE_KEYS } from "../listening-clip/model";
+import { ACTIVE_LETTER_KEYS, TONE_KEYS, isSupportedLetterPair } from "../listening-clip/model";
 import type { PracticeEvent } from "./model";
 
 const BETA_PRIOR_ALPHA = 2;
@@ -289,6 +289,30 @@ const getRecentPairStats = (pair: PairCounts) => {
   };
 };
 
+const getEventPairKeys = (event: TrackedAnswerEvent) => {
+  if (event.confusionKind === "tone") {
+    return event.correctTone && event.distractorTone
+      ? {
+          correctKey: event.correctTone,
+          distractorKey: event.distractorTone,
+        }
+      : null;
+  }
+
+  if (!event.correctLetter || !event.distractorLetter) {
+    return null;
+  }
+
+  if (!isSupportedLetterPair(event.correctLetter, event.distractorLetter)) {
+    return null;
+  }
+
+  return {
+    correctKey: event.correctLetter,
+    distractorKey: event.distractorLetter,
+  };
+};
+
 const buildPairCounts = (events: TrackedAnswerEvent[], kind: ConfusionKind) => {
   const counts = new Map<string, PairCounts>();
 
@@ -297,14 +321,13 @@ const buildPairCounts = (events: TrackedAnswerEvent[], kind: ConfusionKind) => {
       return;
     }
 
-    const correctKey = kind === "letter" ? event.correctLetter : event.correctTone;
-    const distractorKey = kind === "letter" ? event.distractorLetter : event.distractorTone;
+    const pairKeys = getEventPairKeys(event);
 
-    if (!correctKey || !distractorKey) {
+    if (!pairKeys) {
       return;
     }
 
-    addPairResult(counts, getPairKey(kind, correctKey, distractorKey), event.isCorrect);
+    addPairResult(counts, getPairKey(kind, pairKeys.correctKey, pairKeys.distractorKey), event.isCorrect);
   });
 
   return counts;
@@ -416,16 +439,17 @@ const getCandidatePairCounts = (events: TrackedAnswerEvent[]) => {
   const counts = new Map<string, PairCounts>();
 
   events.forEach((event) => {
-    const correctKey =
-      event.confusionKind === "letter" ? event.correctLetter : event.correctTone;
-    const distractorKey =
-      event.confusionKind === "letter" ? event.distractorLetter : event.distractorTone;
+    const pairKeys = getEventPairKeys(event);
 
-    if (!correctKey || !distractorKey) {
+    if (!pairKeys) {
       return;
     }
 
-    addPairResult(counts, getPairKey(event.confusionKind, correctKey, distractorKey), event.isCorrect);
+    addPairResult(
+      counts,
+      getPairKey(event.confusionKind, pairKeys.correctKey, pairKeys.distractorKey),
+      event.isCorrect
+    );
   });
 
   return counts;
@@ -433,8 +457,12 @@ const getCandidatePairCounts = (events: TrackedAnswerEvent[]) => {
 
 const getTargetKind = (events: TrackedAnswerEvent[]): ConfusionKind | null => {
   const recentEvents = events.slice(-RECENT_KIND_WINDOW);
-  const letterAttempts = recentEvents.filter((event) => event.confusionKind === "letter").length;
-  const toneAttempts = recentEvents.filter((event) => event.confusionKind === "tone").length;
+  const letterAttempts = recentEvents.filter(
+    (event) => event.confusionKind === "letter" && getEventPairKeys(event)
+  ).length;
+  const toneAttempts = recentEvents.filter(
+    (event) => event.confusionKind === "tone" && getEventPairKeys(event)
+  ).length;
 
   if (Math.abs(letterAttempts - toneAttempts) < KIND_BALANCE_THRESHOLD) {
     return null;
@@ -482,7 +510,7 @@ export const getPracticeStatsSnapshot = (events: PracticeEvent[]): PracticeStats
     overview: getPracticeOverview(answerEvents, audioListenedEvents),
     dailyAccuracy: getDailyAccuracySeries(accuracyAnswerEvents),
     dailyExercises: getDailyExerciseSeries(answerEvents),
-    letter: toMatrixSummary("letter", LETTER_KEYS, buildPairCounts(trackedEvents, "letter")),
+    letter: toMatrixSummary("letter", ACTIVE_LETTER_KEYS, buildPairCounts(trackedEvents, "letter")),
     tone: toMatrixSummary("tone", TONE_KEYS, buildPairCounts(trackedEvents, "tone")),
   };
 };
