@@ -263,6 +263,45 @@ export const listPracticeEvents = async () => {
   return rows.map((row) => fromPracticeEventRow(row));
 };
 
+export const rewritePracticeEvents = async (
+  rewriteEvent: (event: PracticeEvent) => PracticeEvent
+) => {
+  const rows = await appDb.practiceEvents.toArray();
+  rows.sort(comparePracticeEventRows);
+
+  const rewrittenRows: DbPracticeEventRow[] = [];
+  const rewrittenEvents: PracticeEvent[] = [];
+
+  rows.forEach((row) => {
+    const nextEvent = clonePracticeEvent(rewriteEvent(fromPracticeEventRow(row)));
+    rewrittenEvents.push(nextEvent);
+
+    const nextRow = {
+      ...toPracticeEventRow(nextEvent),
+      id: row.id,
+    } satisfies DbPracticeEventRow;
+
+    const previousRowSnapshot = JSON.stringify({
+      ...row,
+      id: undefined,
+    });
+    const nextRowSnapshot = JSON.stringify({
+      ...nextRow,
+      id: undefined,
+    });
+
+    if (previousRowSnapshot !== nextRowSnapshot) {
+      rewrittenRows.push(nextRow);
+    }
+  });
+
+  if (rewrittenRows.length) {
+    await appDb.practiceEvents.bulkPut(rewrittenRows);
+  }
+
+  return rewrittenEvents;
+};
+
 export const saveLearningRecord = async (record: LearningRecord) => {
   await appDb.learningRecords.put(toLearningRecordRow(cloneLearningRecord(record)));
 };

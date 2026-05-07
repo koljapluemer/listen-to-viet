@@ -9,7 +9,7 @@ import {
 import {
   appendPracticeEvent,
   listLearningRecords,
-  listPracticeEvents,
+  rewritePracticeEvents,
   saveLearningRecord,
 } from "../../entities/practice-progress/storage";
 import {
@@ -49,6 +49,16 @@ interface SessionLearningRecord {
   timestamp: string;
 }
 
+interface ClipCatalogEntry {
+  clip: Clip;
+  candidates: DistractorCandidate[];
+}
+
+interface PairInventoryEntry {
+  clip: Clip;
+  candidate: DistractorCandidate;
+}
+
 type Phase = "loading" | "ready" | "wrong";
 
 const MAX_WORDS = 5;
@@ -69,6 +79,12 @@ const shuffle = <T>(items: T[]) => {
   return copy;
 };
 
+const getBidirectionalPairInventoryKey = (
+  kind: PracticePairTarget["kind"],
+  leftKey: string,
+  rightKey: string
+) => `${kind}:${[leftKey, rightKey].sort((left, right) => left.localeCompare(right)).join("|")}`;
+
 export const useListeningPracticeSession = () => {
   const clips = ref<Clip[]>([]);
   const practiceEvents = ref<PracticeEvent[]>([]);
@@ -88,6 +104,9 @@ export const useListeningPracticeSession = () => {
   const lastAudioPositionSeconds = ref<number | null>(null);
   const autoplayHint = ref("");
   const loadError = ref("");
+  let clipCatalog: ClipCatalogEntry[] = [];
+  let clipCatalogByFilename = new Map<string, ClipCatalogEntry>();
+  let pairInventory = new Map<string, PairInventoryEntry[]>();
 
   const answerOptions = computed(() => round.value?.options ?? []);
   const changedCharacterIndex = computed(() => round.value?.candidate.changedIndex ?? -1);
@@ -102,9 +121,145 @@ export const useListeningPracticeSession = () => {
     return target.isContentEditable || INTERACTIVE_TAG_NAMES.has(target.tagName);
   };
 
+  const buildClipCatalog = (availableClips: Clip[]) =>
+    availableClips
+      .map((clip) => {
+        const candidates = listDistractorCandidates(clip.transcript);
+
+        if (!candidates.length) {
+          return null;
+        }
+
+        return {
+          clip,
+          candidates,
+        } satisfies ClipCatalogEntry;
+      })
+      .filter((entry): entry is ClipCatalogEntry => entry !== null);
+
+  const buildPairInventory = (catalog: ClipCatalogEntry[]) => {
+    const nextInventory = new Map<string, PairInventoryEntry[]>();
+
+    catalog.forEach((entry) => {
+      entry.candidates.forEach((candidate) => {
+        const leftKey = candidate.kind === "letter" ? candidate.correctLetter : candidate.correctTone;
+        const rightKey = candidate.kind === "letter" ? candidate.distractorLetter : candidate.distractorTone;
+
+        if (!leftKey || !rightKey) {
+          return;
+        }
+
+        const inventoryKey = getBidirectionalPairInventoryKey(candidate.kind, leftKey, rightKey);
+        const currentEntries = nextInventory.get(inventoryKey) ?? [];
+
+        currentEntries.push({
+          clip: entry.clip,
+          candidate,
+        });
+        nextInventory.set(inventoryKey, currentEntries);
+      });
+    });
+
+    return nextInventory;
+  };
+
+  const getCatalogEntry = (clip: Clip) => clipCatalogByFilename.get(clip.filename) ?? null;
+
+  const pickLearningCandidate = (candidates: DistractorCandidate[]) =>
+    chooseDistractorCandidate(candidates, practiceEvents.value) ?? candidates[0] ?? null;
+
+  const hasRealizablePairTarget = (pairTarget: PracticePairTarget) =>
+    pairInventory.has(
+      getBidirectionalPairInventoryKey(pairTarget.kind, pairTarget.correctKey, pairTarget.distractorKey)
+    );
+
+  const stripPracticeEventAnalytics = (event: PracticeEvent) => ({
+    ...event,
+    analyticsVersion: undefined,
+    changedIndex: undefined,
+    confusionKind: undefined,
+    correctCharacter: undefined,
+    distractorCharacter: undefined,
+    correctLetter: undefined,
+    distractorLetter: undefined,
+    correctTone: undefined,
+    distractorTone: undefined,
+  });
+
+  const stripPracticeEventMetaPair = (event: PracticeEvent) => ({
+    ...event,
+    metaPairKind: undefined,
+    metaPairLeftKey: undefined,
+    metaPairRightKey: undefined,
+  });
+
+  const getAnalyticsPairTarget = (event: PracticeEvent): PracticePairTarget | null => {
+    if (event.confusionKind === "letter" && event.correctLetter && event.distractorLetter) {
+      return {
+        kind: "letter",
+        correctKey: event.correctLetter,
+        distractorKey: event.distractorLetter,
+      };
+    }
+
+    if (event.confusionKind === "tone" && event.correctTone && event.distractorTone) {
+      return {
+        kind: "tone",
+        correctKey: event.correctTone,
+        distractorKey: event.distractorTone,
+      };
+    }
+
+    return null;
+  };
+
+  const getMetaPairTargetFromEvent = (event: PracticeEvent): PracticePairTarget | null => {
+    if (!event.metaPairKind || !event.metaPairLeftKey || !event.metaPairRightKey) {
+      return null;
+    }
+
+    return {
+      kind: event.metaPairKind,
+      correctKey: event.metaPairLeftKey,
+      distractorKey: event.metaPairRightKey,
+    };
+  };
+
+  const sanitizeStoredPracticeEvent = (event: PracticeEvent) => {
+    let sanitizedEvent = event;
+    const analyticsPairTarget = getAnalyticsPairTarget(sanitizedEvent);
+
+    if (
+      sanitizedEvent.analyticsVersion === 1 ||
+      sanitizedEvent.confusionKind ||
+      sanitizedEvent.correctLetter ||
+      sanitizedEvent.distractorLetter ||
+      sanitizedEvent.correctTone !== undefined ||
+      sanitizedEvent.distractorTone !== undefined
+    ) {
+      if (!analyticsPairTarget || !hasRealizablePairTarget(analyticsPairTarget)) {
+        sanitizedEvent = stripPracticeEventAnalytics(sanitizedEvent);
+      }
+    }
+
+    const metaPairTarget = getMetaPairTargetFromEvent(sanitizedEvent);
+
+    if (
+      sanitizedEvent.metaPairKind ||
+      sanitizedEvent.metaPairLeftKey ||
+      sanitizedEvent.metaPairRightKey
+    ) {
+      if (!metaPairTarget || !hasRealizablePairTarget(metaPairTarget)) {
+        sanitizedEvent = stripPracticeEventMetaPair(sanitizedEvent);
+      }
+    }
+
+    return sanitizedEvent;
+  };
+
   const createRound = (clip: Clip, metaBlockIndex: number): Round | null => {
-    const candidates = listDistractorCandidates(clip.transcript);
-    const candidate = chooseDistractorCandidate(candidates, practiceEvents.value);
+    const catalogEntry = getCatalogEntry(clip);
+    const candidate = catalogEntry ? pickLearningCandidate(catalogEntry.candidates) : null;
 
     if (!candidate) {
       return null;
@@ -125,7 +280,7 @@ export const useListeningPracticeSession = () => {
   };
 
   const createRandomRound = (clip: Clip, metaBlockIndex: number): Round | null => {
-    const candidates = listDistractorCandidates(clip.transcript);
+    const candidates = getCatalogEntry(clip)?.candidates ?? [];
 
     if (!candidates.length) {
       return null;
@@ -187,57 +342,41 @@ export const useListeningPracticeSession = () => {
       return null;
     }
 
-    return {
+    const pairTarget = {
       kind: matchingEvent.metaPairKind,
       correctKey: matchingEvent.metaPairLeftKey,
       distractorKey: matchingEvent.metaPairRightKey,
     };
-  };
 
-  const matchesBidirectionalPair = (candidate: DistractorCandidate, pairTarget: PracticePairTarget) => {
-    const correctKey = candidate.kind === "letter" ? candidate.correctLetter : candidate.correctTone;
-    const distractorKey = candidate.kind === "letter" ? candidate.distractorLetter : candidate.distractorTone;
-
-    if (!correctKey || !distractorKey || candidate.kind !== pairTarget.kind) {
-      return false;
-    }
-
-    return (
-      (correctKey === pairTarget.correctKey && distractorKey === pairTarget.distractorKey) ||
-      (correctKey === pairTarget.distractorKey && distractorKey === pairTarget.correctKey)
-    );
+    return hasRealizablePairTarget(pairTarget) ? pairTarget : null;
   };
 
   const createWeakestPairRound = (
     pairTarget: PracticePairTarget,
     metaBlockIndex: number
   ): Round | null => {
-    for (const clip of shuffle(clips.value)) {
-      const candidates = listDistractorCandidates(clip.transcript).filter((candidate) =>
-        matchesBidirectionalPair(candidate, pairTarget)
-      );
+    const inventoryEntries = pairInventory.get(
+      getBidirectionalPairInventoryKey(pairTarget.kind, pairTarget.correctKey, pairTarget.distractorKey)
+    );
 
-      if (!candidates.length) {
-        continue;
-      }
-
-      const candidate = candidates[Math.floor(Math.random() * candidates.length)];
-
-      return {
-        clip,
-        candidate,
-        selectionMode: "random",
-        metaMode: "weakestPairBidirectional",
-        metaBlockIndex,
-        metaPairTarget: pairTarget,
-        options: shuffle([
-          { label: clip.transcript, isCorrect: true },
-          { label: candidate.label, isCorrect: false },
-        ]),
-      };
+    if (!inventoryEntries?.length) {
+      return null;
     }
 
-    return null;
+    const inventoryEntry = inventoryEntries[Math.floor(Math.random() * inventoryEntries.length)];
+
+    return {
+      clip: inventoryEntry.clip,
+      candidate: inventoryEntry.candidate,
+      selectionMode: "random",
+      metaMode: "weakestPairBidirectional",
+      metaBlockIndex,
+      metaPairTarget: pairTarget,
+      options: shuffle([
+        { label: inventoryEntry.clip.transcript, isCorrect: true },
+        { label: inventoryEntry.candidate.label, isCorrect: false },
+      ]),
+    };
   };
 
   const replayAudio = async () => {
@@ -371,10 +510,18 @@ export const useListeningPracticeSession = () => {
     autoplayHint.value = "";
     loadError.value = "";
 
-    let nextRound: Round | null = null;
     const { blockIndex, metaMode } = getCurrentMetaMode();
+    let nextRound: Round | null = null;
 
-    if (metaMode === "default") {
+    if (metaMode === "weakestPairBidirectional") {
+      const pairTarget = getPersistedMetaPairTarget(blockIndex) ?? getWeakestRecentPairTarget(practiceEvents.value);
+
+      if (pairTarget) {
+        nextRound = createWeakestPairRound(pairTarget, blockIndex);
+      }
+    }
+
+    if (!nextRound) {
       const useFullyRandomRound = Math.random() < FULLY_RANDOM_ROUND_PROBABILITY;
 
       for (let attempt = 0; attempt < 10 && !nextRound; attempt += 1) {
@@ -382,12 +529,6 @@ export const useListeningPracticeSession = () => {
           ? clips.value[Math.floor(Math.random() * clips.value.length)]
           : pickNextClip();
         nextRound = useFullyRandomRound ? createRandomRound(clip, blockIndex) : createRound(clip, blockIndex);
-      }
-    } else {
-      const pairTarget = getPersistedMetaPairTarget(blockIndex) ?? getWeakestRecentPairTarget(practiceEvents.value);
-
-      if (pairTarget) {
-        nextRound = createWeakestPairRound(pairTarget, blockIndex);
       }
     }
 
@@ -534,13 +675,17 @@ export const useListeningPracticeSession = () => {
 
     const transcriptText = await transcriptResponse.text();
     const parsedClips = parseTranscriptFile(transcriptText, MAX_WORDS);
-    const clipsByFilename = new Map(parsedClips.map((clip) => [clip.filename, clip]));
+    clipCatalog = buildClipCatalog(parsedClips);
+    clipCatalogByFilename = new Map(clipCatalog.map((entry) => [entry.clip.filename, entry]));
+    pairInventory = buildPairInventory(clipCatalog);
+
+    const clipsByFilename = new Map(clipCatalog.map((entry) => [entry.clip.filename, entry.clip]));
     const [storedLearningRecords, storedPracticeEvents] = await Promise.all([
       listLearningRecords(),
-      listPracticeEvents(),
+      rewritePracticeEvents(sanitizeStoredPracticeEvent),
     ]);
 
-    clips.value = parsedClips;
+    clips.value = clipCatalog.map((entry) => entry.clip);
     practiceEvents.value = storedPracticeEvents;
     learningRecords.value = storedLearningRecords
       .map((record) => {
