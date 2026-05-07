@@ -627,6 +627,8 @@ export const useListeningPracticeSession = () => {
     }
 
     if (option.isCorrect) {
+      audioRef.value?.pause();
+      await finalizeAudioPlaybackTracking();
       phase.value = "loading";
       await setNextRound();
       return;
