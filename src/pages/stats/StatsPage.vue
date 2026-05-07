@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { LETTER_COMPARISON_GROUPS } from "../../entities/listening-clip/model";
 import PracticeAccuracyChart from "./PracticeAccuracyChart.vue";
 import PracticeDailyAccuracyChart from "./PracticeDailyAccuracyChart.vue";
@@ -7,7 +7,18 @@ import PracticeDailyVolumeChart from "./PracticeDailyVolumeChart.vue";
 import PracticeStatsMatrix from "./PracticeStatsMatrix.vue";
 import { usePracticeStatsPage } from "./usePracticeStatsPage";
 
-const { accuracyTrials, exportTrackedData, loadError, loading, stats } = usePracticeStatsPage();
+const {
+  accuracyTrials,
+  exportTrackedData,
+  importTrackedData,
+  loadError,
+  loading,
+  stats,
+  syncNotice,
+  syncing,
+} = usePracticeStatsPage();
+
+const importInput = ref<HTMLInputElement | null>(null);
 
 const toneLabels: Record<string, string> = {
   ngang: "ngang | -",
@@ -38,6 +49,27 @@ const formatDuration = (durationMs: number) => {
 
   return `${seconds}s`;
 };
+
+const openImportPicker = () => {
+  importInput.value?.click();
+};
+
+const handleImportChange = async (event: Event) => {
+  const target = event.target;
+
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const file = target.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  await importTrackedData(file);
+  target.value = "";
+};
 </script>
 
 <template>
@@ -50,13 +82,40 @@ const formatDuration = (durationMs: number) => {
           </h1>
         </div>
 
-        <button
-          class="btn btn-outline btn-sm w-full sm:w-auto"
-          @click="exportTrackedData"
-        >
-          Export tracked data JSON
-        </button>
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <input
+            ref="importInput"
+            type="file"
+            accept="application/json,.json"
+            class="hidden"
+            @change="handleImportChange"
+          >
+
+          <button
+            class="btn btn-outline btn-sm w-full sm:w-auto"
+            :disabled="syncing"
+            @click="openImportPicker"
+          >
+            Import tracked data JSON
+          </button>
+
+          <button
+            class="btn btn-outline btn-sm w-full sm:w-auto"
+            :disabled="syncing"
+            @click="exportTrackedData"
+          >
+            Export tracked data JSON
+          </button>
+        </div>
       </div>
+    </div>
+
+    <div
+      v-if="syncNotice"
+      class="alert"
+      :class="syncNotice.tone === 'success' ? 'alert-success' : 'alert-error'"
+    >
+      <span>{{ syncNotice.text }}</span>
     </div>
 
     <div

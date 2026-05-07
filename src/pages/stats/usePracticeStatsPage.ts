@@ -1,5 +1,6 @@
 import { onMounted, ref } from "vue";
 import {
+  importPracticeExportSnapshot,
   listPracticeEvents,
   readPracticeExportSnapshot,
 } from "../../entities/practice-progress/storage";
@@ -10,11 +11,18 @@ import {
   type PracticeStatsSnapshot,
 } from "../../entities/practice-progress/stats";
 
+interface SyncNotice {
+  tone: "success" | "error";
+  text: string;
+}
+
 export const usePracticeStatsPage = () => {
   const loadError = ref("");
   const loading = ref(true);
+  const syncing = ref(false);
   const accuracyTrials = ref<AccuracyTrialPoint[]>([]);
   const stats = ref<PracticeStatsSnapshot | null>(null);
+  const syncNotice = ref<SyncNotice | null>(null);
 
   const loadStats = async () => {
     loading.value = true;
@@ -46,6 +54,32 @@ export const usePracticeStatsPage = () => {
     URL.revokeObjectURL(url);
   };
 
+  const importTrackedData = async (file: File) => {
+    syncing.value = true;
+    syncNotice.value = null;
+
+    try {
+      const fileContent = await file.text();
+      const importResult = await importPracticeExportSnapshot(JSON.parse(fileContent) as unknown);
+      await loadStats();
+
+      syncNotice.value = {
+        tone: "success",
+        text:
+          importResult.importedCount > 0
+            ? `Imported ${importResult.importedCount} events. Skipped ${importResult.skippedCount}.`
+            : `No new events. Skipped ${importResult.skippedCount} duplicates.`,
+      };
+    } catch (error) {
+      syncNotice.value = {
+        tone: "error",
+        text: error instanceof Error ? error.message : "Could not import tracked data.",
+      };
+    } finally {
+      syncing.value = false;
+    }
+  };
+
   onMounted(() => {
     void loadStats();
   });
@@ -53,8 +87,11 @@ export const usePracticeStatsPage = () => {
   return {
     accuracyTrials,
     exportTrackedData,
+    importTrackedData,
     loadError,
     loading,
+    syncNotice,
+    syncing,
     stats,
   };
 };
