@@ -1,3 +1,6 @@
+THIS IS A REAL FUCKING APP!!!! 
+WRITE WORKING FUCKING CODE, PROPERLY IMPLEMENT THINGS, DON'T LEAVE TRASH LYING AROUND!!!
+
 ## Essential Tech Stack
 
 - tailwind + Daisy UI. Actually use daisy components. Avoid manual CSS when possible.

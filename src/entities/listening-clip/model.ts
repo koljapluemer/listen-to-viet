@@ -114,6 +114,7 @@ const vietnameseAlphabetCharacters = [
   "v",
   "x",
   "y",
+  ...vowelFamilies.flatMap((family) => family.slice(1)),
 ] as const;
 const directlyRemovedLetterPairs = new Set(["i->y", "y->i"]);
 
@@ -292,13 +293,13 @@ const hasOnlyVietnameseAlphabetCharacters = (token: string) =>
     (character) => !isAlphabeticCharacter(character) || vietnameseAlphabetCharacterSet.has(character)
   );
 
+const isValidSourceToken = (token: string) =>
+  isVietnameseConfirmedToken(token) && hasOnlyVietnameseAlphabetCharacters(token);
+
 const getToneMarkedCharacterCount = (token: string) =>
   [...token].filter((character) => toneMarkedCharacterSet.has(character)).length;
 
-const isValidMutatedToken = (token: string) =>
-  isVietnameseConfirmedToken(token) &&
-  hasOnlyVietnameseAlphabetCharacters(token) &&
-  getToneMarkedCharacterCount(token) <= 1;
+const isValidMutatedToken = (token: string) => getToneMarkedCharacterCount(token) <= 1;
 
 const getCharacterMetadata = (character: string) => characterMetadataMap.get(character) ?? null;
 
@@ -348,7 +349,7 @@ const listDistractorCandidatesInternal = (transcript: string, stopAfterFirst = f
 
     const sourceToken = characters.slice(tokenSpan.start, tokenSpan.end).join("");
 
-    if (!isVietnameseConfirmedToken(sourceToken)) {
+    if (!isValidSourceToken(sourceToken)) {
       continue;
     }
 
