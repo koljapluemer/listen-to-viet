@@ -1,9 +1,7 @@
-import type { Model } from "ebisu-js/interfaces";
-
 type DbConfusionKind = "letter" | "tone";
 type DbLetterKey = "a" | "ă" | "â" | "e" | "ê" | "i" | "o" | "ô" | "ơ" | "u" | "ư" | "y" | "d" | "đ";
 type DbToneKey = "ngang" | "huyen" | "sac" | "hoi" | "nga" | "nang";
-type DbPracticeRoundSelectionMode = "random" | "learningPrediction";
+type DbPracticeRoundSelectionMode = "strategyA" | "strategyB" | "random" | "learningPrediction";
 type DbPracticeSelectionMetaMode = "default" | "weakestPairBidirectional";
 
 export interface DbStoredClip {
@@ -35,11 +33,4 @@ export interface DbPracticeEventRow {
   distractorLetter?: DbLetterKey;
   correctTone?: DbToneKey | null;
   distractorTone?: DbToneKey | null;
-}
-
-export interface DbLearningRecordRow {
-  clipFilename: string;
-  clip: DbStoredClip;
-  model: Model;
-  timestamp: string;
 }

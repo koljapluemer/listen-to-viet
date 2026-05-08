@@ -1,4 +1,0 @@
-- kick d / đ pair and i/y pair. Just completely remove.
-- allow pairing all vowels in any pair. make this one matrix on the stats page (like the tone matrix). 
-- Viet words never have more than one tone marker. When doing tone exercises, make sure to generate the distractor never contains more than one tone marker (otherwise it's very easy to know which one is correct)
-- The dataset contains words like "Suzuki". These make for too easy exercises. Make a list of "definitely Viet" characters (if it contains a tone diacritic or something like ư, it's definitely a real Viet word), and for exercises only use words that are "confirmed Viet"

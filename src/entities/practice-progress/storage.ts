@@ -1,11 +1,8 @@
 import { appDb } from "../../db/appDb";
-import type { DbLearningRecordRow, DbPracticeEventRow } from "../../db/types";
+import type { DbPracticeEventRow } from "../../db/types";
 import {
-  cloneLearningRecord,
-  cloneModel,
   clonePracticeEvent,
   cloneStoredClip,
-  type LearningRecord,
   type PracticeEvent,
   type PracticeExportSnapshot,
 } from "./model";
@@ -65,21 +62,8 @@ const fromPracticeEventRow = (row: DbPracticeEventRow): PracticeEvent => ({
   distractorTone: row.distractorTone,
 });
 
-const toLearningRecordRow = (record: LearningRecord): DbLearningRecordRow => ({
-  clipFilename: record.clip.filename,
-  clip: cloneStoredClip(record.clip),
-  model: cloneModel(record.model),
-  timestamp: record.timestamp,
-});
-
-const fromLearningRecordRow = (row: DbLearningRecordRow): LearningRecord => ({
-  clip: cloneStoredClip(row.clip),
-  model: cloneModel(row.model),
-  timestamp: row.timestamp,
-});
-
 const PRACTICE_EVENT_TYPES = new Set(["roundStarted", "answer", "audioListened"]);
-const SELECTION_MODES = new Set(["random", "learningPrediction"]);
+const SELECTION_MODES = new Set(["strategyA", "strategyB", "random", "learningPrediction"]);
 const META_MODES = new Set(["default", "weakestPairBidirectional"]);
 const CONFUSION_KINDS = new Set(["letter", "tone"]);
 const LETTER_KEYS = new Set(["a", "ă", "â", "e", "ê", "i", "o", "ô", "ơ", "u", "ư", "y", "d", "đ"]);
@@ -302,24 +286,11 @@ export const rewritePracticeEvents = async (
   return rewrittenEvents;
 };
 
-export const saveLearningRecord = async (record: LearningRecord) => {
-  await appDb.learningRecords.put(toLearningRecordRow(cloneLearningRecord(record)));
-};
-
-export const listLearningRecords = async () => {
-  const rows = await appDb.learningRecords.toArray();
-  return rows.map((row) => fromLearningRecordRow(row));
-};
-
 export const readPracticeExportSnapshot = async (): Promise<PracticeExportSnapshot> => {
-  const [learningRecords, practiceEvents] = await Promise.all([
-    listLearningRecords(),
-    listPracticeEvents(),
-  ]);
+  const practiceEvents = await listPracticeEvents();
 
   return {
     exported_at: new Date().toISOString(),
-    learning_models: learningRecords.map((record) => cloneLearningRecord(record)),
     event_log: practiceEvents.map((event) => clonePracticeEvent(event)),
   };
 };

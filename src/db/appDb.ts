@@ -1,8 +1,7 @@
 import Dexie, { type Table } from "dexie";
-import type { DbLearningRecordRow, DbPracticeEventRow } from "./types";
+import type { DbPracticeEventRow } from "./types";
 
 class ListenToVietDb extends Dexie {
-  learningRecords!: Table<DbLearningRecordRow, string>;
   practiceEvents!: Table<DbPracticeEventRow, number>;
 
   constructor() {
@@ -10,6 +9,10 @@ class ListenToVietDb extends Dexie {
 
     this.version(1).stores({
       learningRecords: "clipFilename",
+      practiceEvents: "++id",
+    });
+
+    this.version(2).stores({
       practiceEvents: "++id",
     });
   }

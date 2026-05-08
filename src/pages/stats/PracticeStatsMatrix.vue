@@ -24,18 +24,31 @@ const visibleCells = computed(() =>
     row.cells.filter((cell) => cell.correctKey !== cell.distractorKey && cell.recentAccuracy !== null)
   )
 );
+const uniqueVisibleCells = computed(() => {
+  const uniqueCells = new Map<string, MatrixCellStats>();
+
+  visibleCells.value.forEach((cell) => {
+    const pairKey = [cell.correctKey, cell.distractorKey].sort((left, right) => left.localeCompare(right)).join("|");
+
+    if (!uniqueCells.has(pairKey)) {
+      uniqueCells.set(pairKey, cell);
+    }
+  });
+
+  return [...uniqueCells.values()];
+});
 const attempts = computed(() =>
-  visibleCells.value.reduce((total, cell) => total + cell.attempts, 0)
+  uniqueVisibleCells.value.reduce((total, cell) => total + cell.attempts, 0)
 );
 const recentAttempts = computed(() =>
-  visibleCells.value.reduce((total, cell) => total + cell.recentAttempts, 0)
+  uniqueVisibleCells.value.reduce((total, cell) => total + cell.recentAttempts, 0)
 );
 const recentCorrect = computed(() =>
-  visibleCells.value.reduce((total, cell) => total + cell.recentCorrect, 0)
+  uniqueVisibleCells.value.reduce((total, cell) => total + cell.recentCorrect, 0)
 );
-const distinctPairs = computed(() => visibleCells.value.length);
+const distinctPairs = computed(() => uniqueVisibleCells.value.length);
 const topPairs = computed<MatrixTopPair[]>(() =>
-  [...visibleCells.value]
+  [...uniqueVisibleCells.value]
     .filter((cell) => cell.attempts >= 3)
     .sort((left, right) => {
       if (left.recentAccuracy !== right.recentAccuracy) {
@@ -50,7 +63,7 @@ const topPairs = computed<MatrixTopPair[]>(() =>
     })
     .slice(0, 5)
     .map((cell) => ({
-      label: `${formatKeyLabel(cell.correctKey)} -> ${formatKeyLabel(cell.distractorKey)}`,
+      label: `${formatKeyLabel(cell.correctKey)} vs ${formatKeyLabel(cell.distractorKey)}`,
       attempts: cell.attempts,
       correct: cell.correct,
       recentAttempts: cell.recentAttempts,

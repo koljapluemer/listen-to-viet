@@ -1,15 +1,10 @@
-import type {
-  ConfusionKind,
-  DistractorCandidate,
-} from "../listening-clip/model";
+import type { ConfusionKind, DistractorCandidate } from "../listening-clip/model";
 import { ACTIVE_LETTER_KEYS, TONE_KEYS, isSupportedLetterPair } from "../listening-clip/model";
 import type { PracticeEvent } from "./model";
 
 const BETA_PRIOR_ALPHA = 2;
 const BETA_PRIOR_BETA = 1;
-const RECENT_KIND_WINDOW = 40;
 const RECENT_PAIR_WINDOW = 10;
-const KIND_BALANCE_THRESHOLD = 4;
 const TOP_PAIR_MIN_ATTEMPTS = 3;
 
 export interface MatrixCellStats {
@@ -42,6 +37,14 @@ export interface PracticePairTarget {
   kind: ConfusionKind;
   correctKey: string;
   distractorKey: string;
+}
+
+export interface PairHistoryStats {
+  attempts: number;
+  correct: number;
+  recentAttempts: number;
+  recentCorrect: number;
+  recentAccuracy: number | null;
 }
 
 export interface MatrixSummary {
@@ -125,20 +128,39 @@ const WILSON_Z_95 = 1.959963984540054;
 export const calculatePosteriorAccuracy = (correct: number, attempts: number) =>
   (correct + BETA_PRIOR_ALPHA) / (attempts + BETA_PRIOR_ALPHA + BETA_PRIOR_BETA);
 
-const getPairKey = (kind: ConfusionKind, correctKey: string, distractorKey: string) =>
-  `${kind}:${correctKey}->${distractorKey}`;
-
 const getRawAccuracy = (correct: number, attempts: number) => (attempts ? correct / attempts : null);
+
+const sortPairKeys = (leftKey: string, rightKey: string) =>
+  leftKey.localeCompare(rightKey) <= 0 ? [leftKey, rightKey] : [rightKey, leftKey];
+
+export const getBidirectionalPracticePairKey = (
+  kind: ConfusionKind,
+  leftKey: string,
+  rightKey: string
+) => {
+  const [firstKey, secondKey] = sortPairKeys(leftKey, rightKey);
+  return `${kind}:${firstKey}|${secondKey}`;
+};
+
+const toBidirectionalPracticePairTarget = (
+  kind: ConfusionKind,
+  leftKey: string,
+  rightKey: string
+): PracticePairTarget => {
+  const [firstKey, secondKey] = sortPairKeys(leftKey, rightKey);
+
+  return {
+    kind,
+    correctKey: firstKey,
+    distractorKey: secondKey,
+  };
+};
 
 const parsePairKey = (pairKey: string): PracticePairTarget | null => {
   const [kind, keys] = pairKey.split(":");
-  const [correctKey, distractorKey] = keys?.split("->") ?? [];
+  const [correctKey, distractorKey] = keys?.split("|") ?? [];
 
-  if (
-    (kind !== "letter" && kind !== "tone") ||
-    !correctKey ||
-    !distractorKey
-  ) {
+  if ((kind !== "letter" && kind !== "tone") || !correctKey || !distractorKey) {
     return null;
   }
 
@@ -175,6 +197,94 @@ const getAudioListenedEvents = (events: PracticeEvent[]) =>
       Number.isFinite(event.duration_ms) &&
       event.duration_ms > 0
   );
+
+const getEventPairTarget = (event: TrackedAnswerEvent): PracticePairTarget | null => {
+  if (event.confusionKind === "tone") {
+    return event.correctTone && event.distractorTone
+      ? toBidirectionalPracticePairTarget("tone", event.correctTone, event.distractorTone)
+      : null;
+  }
+
+  if (!event.correctLetter || !event.distractorLetter) {
+    return null;
+  }
+
+  if (!isSupportedLetterPair(event.correctLetter, event.distractorLetter)) {
+    return null;
+  }
+
+  return toBidirectionalPracticePairTarget("letter", event.correctLetter, event.distractorLetter);
+};
+
+export const getCandidatePairTarget = (candidate: DistractorCandidate): PracticePairTarget | null => {
+  if (candidate.kind === "tone") {
+    return candidate.correctTone && candidate.distractorTone
+      ? toBidirectionalPracticePairTarget("tone", candidate.correctTone, candidate.distractorTone)
+      : null;
+  }
+
+  return toBidirectionalPracticePairTarget("letter", candidate.correctLetter, candidate.distractorLetter);
+};
+
+const addPairResult = (counts: Map<string, PairCounts>, pairKey: string, isCorrect: boolean) => {
+  const current = counts.get(pairKey) ?? { attempts: 0, correct: 0, recentResults: [] };
+  const recentResults = [...current.recentResults, isCorrect].slice(-RECENT_PAIR_WINDOW);
+
+  counts.set(pairKey, {
+    attempts: current.attempts + 1,
+    correct: current.correct + (isCorrect ? 1 : 0),
+    recentResults,
+  });
+};
+
+const toPairHistoryStats = (pair: PairCounts): PairHistoryStats => {
+  const recentAttempts = pair.recentResults.length;
+  const recentCorrect = pair.recentResults.filter(Boolean).length;
+
+  return {
+    attempts: pair.attempts,
+    correct: pair.correct,
+    recentAttempts,
+    recentCorrect,
+    recentAccuracy: getRawAccuracy(recentCorrect, recentAttempts),
+  };
+};
+
+const buildPairCounts = (events: TrackedAnswerEvent[], kind?: ConfusionKind) => {
+  const counts = new Map<string, PairCounts>();
+
+  events.forEach((event) => {
+    if (kind && event.confusionKind !== kind) {
+      return;
+    }
+
+    const pairTarget = getEventPairTarget(event);
+
+    if (!pairTarget) {
+      return;
+    }
+
+    addPairResult(
+      counts,
+      getBidirectionalPracticePairKey(
+        pairTarget.kind,
+        pairTarget.correctKey,
+        pairTarget.distractorKey
+      ),
+      event.isCorrect
+    );
+  });
+
+  return counts;
+};
+
+export const getBidirectionalPairHistory = (events: PracticeEvent[]) => {
+  const counts = buildPairCounts(getTrackedAnswerEvents(events));
+
+  return new Map(
+    [...counts.entries()].map(([pairKey, pairCounts]) => [pairKey, toPairHistoryStats(pairCounts)])
+  );
+};
 
 const getLocalDayKey = (timestamp: string) => {
   const date = new Date(timestamp);
@@ -267,118 +377,52 @@ const getPracticeOverview = (
   totalListeningMs: audioListenedEvents.reduce((sum, event) => sum + event.duration_ms, 0),
 });
 
-const addPairResult = (counts: Map<string, PairCounts>, pairKey: string, isCorrect: boolean) => {
-  const current = counts.get(pairKey) ?? { attempts: 0, correct: 0, recentResults: [] };
-  const recentResults = [...current.recentResults, isCorrect].slice(-RECENT_PAIR_WINDOW);
-
-  counts.set(pairKey, {
-    attempts: current.attempts + 1,
-    correct: current.correct + (isCorrect ? 1 : 0),
-    recentResults,
-  });
-};
-
-const getRecentPairStats = (pair: PairCounts) => {
-  const recentAttempts = pair.recentResults.length;
-  const recentCorrect = pair.recentResults.filter(Boolean).length;
-
-  return {
-    recentAttempts,
-    recentCorrect,
-    recentAccuracy: getRawAccuracy(recentCorrect, recentAttempts),
-  };
-};
-
-const getEventPairKeys = (event: TrackedAnswerEvent) => {
-  if (event.confusionKind === "tone") {
-    return event.correctTone && event.distractorTone
-      ? {
-          correctKey: event.correctTone,
-          distractorKey: event.distractorTone,
-        }
-      : null;
-  }
-
-  if (!event.correctLetter || !event.distractorLetter) {
-    return null;
-  }
-
-  if (!isSupportedLetterPair(event.correctLetter, event.distractorLetter)) {
-    return null;
-  }
-
-  return {
-    correctKey: event.correctLetter,
-    distractorKey: event.distractorLetter,
-  };
-};
-
-const buildPairCounts = (events: TrackedAnswerEvent[], kind: ConfusionKind) => {
-  const counts = new Map<string, PairCounts>();
-
-  events.forEach((event) => {
-    if (event.confusionKind !== kind) {
-      return;
-    }
-
-    const pairKeys = getEventPairKeys(event);
-
-    if (!pairKeys) {
-      return;
-    }
-
-    addPairResult(counts, getPairKey(kind, pairKeys.correctKey, pairKeys.distractorKey), event.isCorrect);
-  });
-
-  return counts;
-};
+const getEmptyMatrixCell = (correctKey: string, distractorKey: string): MatrixCellStats => ({
+  correctKey,
+  distractorKey,
+  attempts: 0,
+  correct: 0,
+  posteriorAccuracy: null,
+  rawAccuracy: null,
+  recentAttempts: 0,
+  recentCorrect: 0,
+  recentAccuracy: null,
+});
 
 const toMatrixSummary = (
   kind: ConfusionKind,
   keys: readonly string[],
   counts: Map<string, PairCounts>
 ): MatrixSummary => {
-  let attempts = 0;
-  let correct = 0;
-  let distinctPairs = 0;
+  const pairEntries = [...counts.entries()]
+    .map(([pairKey, pairCounts]) => {
+      const target = parsePairKey(pairKey);
+
+      if (!target) {
+        return null;
+      }
+
+      return {
+        target,
+        stats: toPairHistoryStats(pairCounts),
+      };
+    })
+    .filter((entry): entry is { target: PracticePairTarget; stats: PairHistoryStats } => entry !== null);
 
   const rows = keys.map((correctKey) => ({
     key: correctKey,
     cells: keys.map((distractorKey) => {
       if (correctKey === distractorKey) {
-        return {
-          correctKey,
-          distractorKey,
-          attempts: 0,
-          correct: 0,
-          posteriorAccuracy: null,
-          rawAccuracy: null,
-          recentAttempts: 0,
-          recentCorrect: 0,
-          recentAccuracy: null,
-        } satisfies MatrixCellStats;
+        return getEmptyMatrixCell(correctKey, distractorKey);
       }
 
-      const pair = counts.get(getPairKey(kind, correctKey, distractorKey));
+      const pair = counts.get(getBidirectionalPracticePairKey(kind, correctKey, distractorKey));
 
       if (!pair) {
-        return {
-          correctKey,
-          distractorKey,
-          attempts: 0,
-          correct: 0,
-          posteriorAccuracy: null,
-          rawAccuracy: null,
-          recentAttempts: 0,
-          recentCorrect: 0,
-          recentAccuracy: null,
-        } satisfies MatrixCellStats;
+        return getEmptyMatrixCell(correctKey, distractorKey);
       }
 
-      attempts += pair.attempts;
-      correct += pair.correct;
-      distinctPairs += 1;
-      const recentStats = getRecentPairStats(pair);
+      const stats = toPairHistoryStats(pair);
 
       return {
         correctKey,
@@ -387,117 +431,47 @@ const toMatrixSummary = (
         correct: pair.correct,
         posteriorAccuracy: calculatePosteriorAccuracy(pair.correct, pair.attempts),
         rawAccuracy: getRawAccuracy(pair.correct, pair.attempts),
-        recentAttempts: recentStats.recentAttempts,
-        recentCorrect: recentStats.recentCorrect,
-        recentAccuracy: recentStats.recentAccuracy,
+        recentAttempts: stats.recentAttempts,
+        recentCorrect: stats.recentCorrect,
+        recentAccuracy: stats.recentAccuracy,
       } satisfies MatrixCellStats;
     }),
   }));
 
-  const topPairs = rows
-    .flatMap((row) =>
-      row.cells
-        .filter(
-          (cell) =>
-            cell.recentAccuracy !== null &&
-            cell.attempts >= TOP_PAIR_MIN_ATTEMPTS &&
-            cell.correctKey !== cell.distractorKey
-        )
-        .map((cell) => ({
-          label: `${cell.correctKey} -> ${cell.distractorKey}`,
-          attempts: cell.attempts,
-          correct: cell.correct,
-          recentAttempts: cell.recentAttempts,
-          recentCorrect: cell.recentCorrect,
-          recentAccuracy: cell.recentAccuracy!,
-        }))
-    )
+  const attempts = pairEntries.reduce((sum, entry) => sum + entry.stats.attempts, 0);
+  const correct = pairEntries.reduce((sum, entry) => sum + entry.stats.correct, 0);
+
+  const topPairs = pairEntries
+    .filter((entry) => entry.stats.recentAccuracy !== null && entry.stats.attempts >= TOP_PAIR_MIN_ATTEMPTS)
     .sort((left, right) => {
-      if (left.recentAccuracy !== right.recentAccuracy) {
-        return left.recentAccuracy - right.recentAccuracy;
+      if (left.stats.recentAccuracy !== right.stats.recentAccuracy) {
+        return left.stats.recentAccuracy! - right.stats.recentAccuracy!;
       }
 
-      if (left.recentAttempts !== right.recentAttempts) {
-        return right.recentAttempts - left.recentAttempts;
+      if (left.stats.recentAttempts !== right.stats.recentAttempts) {
+        return right.stats.recentAttempts - left.stats.recentAttempts;
       }
 
-      return right.attempts - left.attempts;
+      return right.stats.attempts - left.stats.attempts;
     })
-    .slice(0, 5);
+    .slice(0, 5)
+    .map(({ target, stats }) => ({
+      label: `${target.correctKey} vs ${target.distractorKey}`,
+      attempts: stats.attempts,
+      correct: stats.correct,
+      recentAttempts: stats.recentAttempts,
+      recentCorrect: stats.recentCorrect,
+      recentAccuracy: stats.recentAccuracy!,
+    }));
 
   return {
     attempts,
     correct,
     posteriorAccuracy: attempts ? calculatePosteriorAccuracy(correct, attempts) : null,
-    distinctPairs,
+    distinctPairs: pairEntries.length,
     topPairs,
     rows,
   };
-};
-
-const getCandidatePairCounts = (events: TrackedAnswerEvent[]) => {
-  const counts = new Map<string, PairCounts>();
-
-  events.forEach((event) => {
-    const pairKeys = getEventPairKeys(event);
-
-    if (!pairKeys) {
-      return;
-    }
-
-    addPairResult(
-      counts,
-      getPairKey(event.confusionKind, pairKeys.correctKey, pairKeys.distractorKey),
-      event.isCorrect
-    );
-  });
-
-  return counts;
-};
-
-const getTargetKind = (events: TrackedAnswerEvent[]): ConfusionKind | null => {
-  const recentEvents = events.slice(-RECENT_KIND_WINDOW);
-  const letterAttempts = recentEvents.filter(
-    (event) => event.confusionKind === "letter" && getEventPairKeys(event)
-  ).length;
-  const toneAttempts = recentEvents.filter(
-    (event) => event.confusionKind === "tone" && getEventPairKeys(event)
-  ).length;
-
-  if (Math.abs(letterAttempts - toneAttempts) < KIND_BALANCE_THRESHOLD) {
-    return null;
-  }
-
-  return letterAttempts < toneAttempts ? "letter" : "tone";
-};
-
-const getCandidateScore = (
-  candidate: DistractorCandidate,
-  pairCounts: Map<string, PairCounts>,
-  targetKind: ConfusionKind | null
-) => {
-  const pairKey =
-    candidate.kind === "letter"
-      ? getPairKey(candidate.kind, candidate.correctLetter, candidate.distractorLetter)
-      : getPairKey(candidate.kind, candidate.correctTone!, candidate.distractorTone!);
-  const counts = pairCounts.get(pairKey);
-  const attempts = counts?.attempts ?? 0;
-  const recentStats = counts ? getRecentPairStats(counts) : null;
-
-  let score = 0;
-
-  if (attempts === 0) {
-    score += 100;
-  } else if (recentStats && recentStats.recentAccuracy !== null) {
-    score += (1 - recentStats.recentAccuracy) * 20;
-  }
-
-  if (targetKind === candidate.kind) {
-    score += 15;
-  }
-
-  score += Math.random();
-  return score;
 };
 
 export const getPracticeStatsSnapshot = (events: PracticeEvent[]): PracticeStatsSnapshot => {
@@ -550,76 +524,4 @@ export const getAccuracyTrialSeries = (events: PracticeEvent[], visibleWindow?: 
   });
 
   return typeof visibleWindow === "number" ? trials.slice(-visibleWindow) : trials;
-};
-
-export const chooseDistractorCandidate = (
-  candidates: DistractorCandidate[],
-  events: PracticeEvent[]
-) => {
-  if (!candidates.length) {
-    return null;
-  }
-
-  const trackedEvents = getTrackedAnswerEvents(events);
-  const pairCounts = getCandidatePairCounts(trackedEvents);
-  const targetKind = getTargetKind(trackedEvents);
-
-  return candidates
-    .map((candidate) => ({
-      candidate,
-      score: getCandidateScore(candidate, pairCounts, targetKind),
-    }))
-    .sort((left, right) => right.score - left.score)[0]?.candidate ?? null;
-};
-
-export const getWeakestRecentPairTarget = (events: PracticeEvent[]) => {
-  const trackedEvents = getTrackedAnswerEvents(events);
-  const pairCounts = getCandidatePairCounts(trackedEvents);
-  let weakestPair: (PracticePairTarget & {
-    recentAccuracy: number;
-    recentAttempts: number;
-    attempts: number;
-  }) | null = null;
-
-  for (const [pairKey, pair] of pairCounts.entries()) {
-    const target = parsePairKey(pairKey);
-    const recentStats = getRecentPairStats(pair);
-
-    if (!target || recentStats.recentAccuracy === null) {
-      continue;
-    }
-
-    const candidate: PracticePairTarget & {
-      recentAccuracy: number;
-      recentAttempts: number;
-      attempts: number;
-    } = {
-      ...target,
-      recentAccuracy: recentStats.recentAccuracy,
-      recentAttempts: recentStats.recentAttempts,
-      attempts: pair.attempts,
-    };
-
-    if (
-      !weakestPair ||
-      candidate.recentAccuracy < weakestPair.recentAccuracy ||
-      (candidate.recentAccuracy === weakestPair.recentAccuracy &&
-        candidate.recentAttempts > weakestPair.recentAttempts) ||
-      (candidate.recentAccuracy === weakestPair.recentAccuracy &&
-        candidate.recentAttempts === weakestPair.recentAttempts &&
-        candidate.attempts > weakestPair.attempts)
-    ) {
-      weakestPair = candidate;
-    }
-  }
-
-  if (!weakestPair) {
-    return null;
-  }
-
-  return {
-    kind: weakestPair.kind,
-    correctKey: weakestPair.correctKey,
-    distractorKey: weakestPair.distractorKey,
-  };
 };
