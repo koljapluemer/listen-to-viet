@@ -9,6 +9,15 @@ const props = defineProps<{
   formatKey?: (key: string) => string;
 }>();
 
+const MIN_RANDOM_ACCURACY = 0.5;
+const SCIENTIFIC_COLOR_STOPS = [
+  { position: 0, rgb: [0, 34, 78] },
+  { position: 0.25, rgb: [52, 73, 107] },
+  { position: 0.5, rgb: [103, 107, 112] },
+  { position: 0.75, rgb: [168, 144, 92] },
+  { position: 1, rgb: [253, 233, 69] },
+] as const;
+
 const visibleKeys = computed(() => props.keys ?? props.summary.rows.map((row) => row.key));
 const visibleRows = computed(() =>
   props.summary.rows
@@ -82,6 +91,34 @@ const formatPercent = (value: number | null) => {
 
 const formatKeyLabel = (key: string) => props.formatKey?.(key) ?? key;
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const mixChannel = (start: number, end: number, amount: number) =>
+  Math.round(start + (end - start) * amount);
+
+const getScientificColor = (value: number) => {
+  const normalizedValue = clamp((value - MIN_RANDOM_ACCURACY) / (1 - MIN_RANDOM_ACCURACY), 0, 1);
+
+  for (let index = 1; index < SCIENTIFIC_COLOR_STOPS.length; index += 1) {
+    const start = SCIENTIFIC_COLOR_STOPS[index - 1];
+    const end = SCIENTIFIC_COLOR_STOPS[index];
+
+    if (normalizedValue <= end.position) {
+      const range = end.position - start.position || 1;
+      const amount = (normalizedValue - start.position) / range;
+
+      return start.rgb.map((channel, channelIndex) =>
+        mixChannel(channel, end.rgb[channelIndex], amount)
+      ) as [number, number, number];
+    }
+  }
+
+  return [...SCIENTIFIC_COLOR_STOPS[SCIENTIFIC_COLOR_STOPS.length - 1].rgb] as [number, number, number];
+};
+
+const getRelativeLuminance = ([red, green, blue]: [number, number, number]) =>
+  (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+
 const getTooltip = (cell: MatrixCellStats) => {
   if (cell.recentAccuracy === null) {
     return "No tracked attempts yet";
@@ -101,12 +138,14 @@ const getCellStyle = (cell: MatrixCellStats) => {
     return {};
   }
 
-  const hue = cell.recentAccuracy * 120;
+  const [red, green, blue] = getScientificColor(cell.recentAccuracy);
   const alpha = Math.min(0.22 + Math.log(cell.attempts + 1) / 4, 0.82);
+  const textColor = getRelativeLuminance([red, green, blue]) > 0.58 ? "rgb(17 24 39)" : "rgb(248 250 252)";
 
   return {
-    backgroundColor: `hsla(${hue}, 72%, 72%, ${alpha})`,
-    borderColor: `hsla(${hue}, 72%, 30%, 0.3)`,
+    backgroundColor: `rgba(${red}, ${green}, ${blue}, ${alpha})`,
+    borderColor: `rgba(${red}, ${green}, ${blue}, 0.58)`,
+    color: textColor,
   };
 };
 </script>
