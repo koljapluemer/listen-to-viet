@@ -116,8 +116,6 @@ const vietnameseAlphabetCharacters = [
   "y",
   ...vowelFamilies.flatMap((family) => family.slice(1)),
 ] as const;
-const directlyRemovedLetterPairs = new Set(["i->y", "y->i"]);
-
 const buildCharacterSet = (characters: readonly string[]) => {
   const set = new Set<string>();
 
@@ -144,11 +142,7 @@ const vietnameseAlphabetCharacterSet = buildCharacterSet(vietnameseAlphabetChara
 const activeLetterKeySet = new Set<string>(ACTIVE_LETTER_KEYS);
 
 export function isSupportedLetterPair(correctLetter: string, distractorLetter: string) {
-  if (!activeLetterKeySet.has(correctLetter) || !activeLetterKeySet.has(distractorLetter)) {
-    return false;
-  }
-
-  return !directlyRemovedLetterPairs.has(`${correctLetter}->${distractorLetter}`);
+  return activeLetterKeySet.has(correctLetter) && activeLetterKeySet.has(distractorLetter);
 }
 
 const characterMetadataMap = (() => {
