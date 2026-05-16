@@ -1,11 +1,9 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { type Clip, type DistractorCandidate } from "../../entities/listening-clip/model";
 import {
-  type Clip,
-  type DistractorCandidate,
-  listDistractorCandidates,
-  parseTranscriptFile,
-} from "../../entities/listening-clip/model";
-import { appendPracticeEvent, listPracticeEvents } from "../../entities/practice-progress/storage";
+  appendPracticeEvent,
+  listPracticeEvents,
+} from "../../entities/practice-progress/storage";
 import {
   toPracticeEventAnalytics,
   toStoredClip,
@@ -19,22 +17,14 @@ import {
   type PairHistoryStats,
   type PracticePairTarget,
 } from "../../entities/practice-progress/stats";
-
-export interface AnswerOption {
-  label: string;
-  isCorrect: boolean;
-}
+import { buildPracticeCatalog, parsePracticeClips } from "./catalog";
+import type { AnswerOption, PracticeCatalogEntry, PracticeSessionConfig } from "./model";
 
 interface Round {
   clip: Clip;
   candidate: DistractorCandidate;
   options: AnswerOption[];
   selectionMode: PracticeRoundSelectionMode;
-}
-
-interface ClipCatalogEntry {
-  clip: Clip;
-  candidates: DistractorCandidate[];
 }
 
 interface ExerciseCandidate {
@@ -45,7 +35,6 @@ interface ExerciseCandidate {
 
 type Phase = "loading" | "ready" | "wrong";
 
-const MAX_WORDS = 5;
 const BATCH_SIZE = 3;
 const MAX_ROUND_GENERATION_ATTEMPTS = 100;
 const INTERACTIVE_TAG_NAMES = new Set(["A", "AUDIO", "BUTTON", "INPUT", "SELECT", "TEXTAREA"]);
@@ -77,7 +66,18 @@ const getStrategyBScore = (pairHistory: PairHistoryStats | undefined) => {
   return pairHistory.recentAccuracy;
 };
 
-export const useListeningPracticeSession = () => {
+const getSessionMeta = (config: PracticeSessionConfig) => {
+  const metaPair = config.metaPair ?? config.pairFilter;
+
+  return {
+    metaMode: config.metaMode,
+    metaPairKind: metaPair?.kind,
+    metaPairLeftKey: metaPair?.correctKey,
+    metaPairRightKey: metaPair?.distractorKey,
+  } satisfies Pick<PracticeEvent, "metaMode" | "metaPairKind" | "metaPairLeftKey" | "metaPairRightKey">;
+};
+
+export const usePracticeSession = (config: PracticeSessionConfig) => {
   const clips = ref<Clip[]>([]);
   const practiceEvents = ref<PracticeEvent[]>([]);
   const round = ref<Round | null>(null);
@@ -92,7 +92,7 @@ export const useListeningPracticeSession = () => {
   const lastAudioPositionSeconds = ref<number | null>(null);
   const autoplayHint = ref("");
   const loadError = ref("");
-  let clipCatalog: ClipCatalogEntry[] = [];
+  let clipCatalog: PracticeCatalogEntry[] = [];
 
   const answerOptions = computed(() => round.value?.options ?? []);
   const changedCharacterIndex = computed(() => round.value?.candidate.changedIndex ?? -1);
@@ -107,26 +107,10 @@ export const useListeningPracticeSession = () => {
     return target.isContentEditable || INTERACTIVE_TAG_NAMES.has(target.tagName);
   };
 
-  const buildClipCatalog = (availableClips: Clip[]) =>
-    availableClips
-      .map((clip) => {
-        const candidates = listDistractorCandidates(clip.transcript);
-
-        if (!candidates.length) {
-          return null;
-        }
-
-        return {
-          clip,
-          candidates,
-        } satisfies ClipCatalogEntry;
-      })
-      .filter((entry): entry is ClipCatalogEntry => entry !== null);
-
   const sampleCatalogEntries = () =>
     shuffle(clipCatalog).slice(0, Math.min(BATCH_SIZE, clipCatalog.length));
 
-  const getSampledExercises = (entries: ClipCatalogEntry[]) =>
+  const getSampledExercises = (entries: PracticeCatalogEntry[]) =>
     entries.flatMap((entry) =>
       entry.candidates
         .map((candidate) => {
@@ -329,6 +313,7 @@ export const useListeningPracticeSession = () => {
       selectionMode,
       distractor,
       duration_ms: listenedDurationMs,
+      ...getSessionMeta(config),
     };
 
     await appendPracticeEvent(audioListenedEvent);
@@ -345,7 +330,9 @@ export const useListeningPracticeSession = () => {
 
   const setNextRound = async () => {
     if (!clips.value.length) {
-      loadError.value = "No clips matched the current transcript filter.";
+      loadError.value = config.pairFilter
+        ? "No practice clips found for this pair."
+        : "No clips matched the current transcript filter.";
       round.value = null;
       phase.value = "loading";
       return;
@@ -372,6 +359,7 @@ export const useListeningPracticeSession = () => {
       timestamp: new Date().toISOString(),
       selectionMode: nextRound.selectionMode,
       distractor: nextRound.candidate.label,
+      ...getSessionMeta(config),
     };
 
     await appendPracticeEvent(roundStartedEvent);
@@ -407,6 +395,7 @@ export const useListeningPracticeSession = () => {
         duration_ms: taskStartTime.value === null ? null : Date.now() - taskStartTime.value,
         selectedTranscript: option.label,
         isCorrect: option.isCorrect,
+        ...getSessionMeta(config),
         ...toPracticeEventAnalytics(round.value.candidate),
       };
 
@@ -464,8 +453,8 @@ export const useListeningPracticeSession = () => {
     }
 
     const transcriptText = await transcriptResponse.text();
-    const parsedClips = parseTranscriptFile(transcriptText, MAX_WORDS);
-    clipCatalog = buildClipCatalog(parsedClips);
+    const parsedClips = parsePracticeClips(transcriptText);
+    clipCatalog = buildPracticeCatalog(parsedClips, config.pairFilter);
 
     clips.value = clipCatalog.map((entry) => entry.clip);
     practiceEvents.value = await listPracticeEvents();

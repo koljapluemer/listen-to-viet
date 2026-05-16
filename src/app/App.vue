@@ -23,6 +23,13 @@
           >
             Stats
           </RouterLink>
+          <RouterLink
+            :to="{ name: 'pairPractice' }"
+            class="btn btn-sm join-item"
+            :class="{ 'btn-active': route.name === 'pairPractice' }"
+          >
+            Pair practice
+          </RouterLink>
         </div>
       </div>
     </header>

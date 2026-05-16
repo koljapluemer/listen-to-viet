@@ -2,7 +2,7 @@ type DbConfusionKind = "letter" | "tone";
 type DbLetterKey = "a" | "ă" | "â" | "e" | "ê" | "i" | "o" | "ô" | "ơ" | "u" | "ư" | "y" | "d" | "đ";
 type DbToneKey = "ngang" | "huyen" | "sac" | "hoi" | "nga" | "nang";
 type DbPracticeRoundSelectionMode = "strategyA" | "strategyB" | "random" | "learningPrediction";
-type DbPracticeSelectionMetaMode = "default" | "weakestPairBidirectional";
+type DbPracticeSelectionMetaMode = "default" | "weakestPairBidirectional" | "fixedPairBidirectional";
 
 export interface DbStoredClip {
   filename: string;

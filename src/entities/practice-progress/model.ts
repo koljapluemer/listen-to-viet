@@ -16,7 +16,10 @@ export type PracticeRoundSelectionMode =
   | "strategyB"
   | "random"
   | "learningPrediction";
-export type PracticeSelectionMetaMode = "default" | "weakestPairBidirectional";
+export type PracticeSelectionMetaMode =
+  | "default"
+  | "weakestPairBidirectional"
+  | "fixedPairBidirectional";
 
 export interface PracticeEvent {
   eventType: "roundStarted" | "answer" | "audioListened";

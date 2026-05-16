@@ -64,7 +64,7 @@ const fromPracticeEventRow = (row: DbPracticeEventRow): PracticeEvent => ({
 
 const PRACTICE_EVENT_TYPES = new Set(["roundStarted", "answer", "audioListened"]);
 const SELECTION_MODES = new Set(["strategyA", "strategyB", "random", "learningPrediction"]);
-const META_MODES = new Set(["default", "weakestPairBidirectional"]);
+const META_MODES = new Set(["default", "weakestPairBidirectional", "fixedPairBidirectional"]);
 const CONFUSION_KINDS = new Set(["letter", "tone"]);
 const LETTER_KEYS = new Set(["a", "ă", "â", "e", "ê", "i", "o", "ô", "ơ", "u", "ư", "y", "d", "đ"]);
 const TONE_KEYS = new Set(["ngang", "huyen", "sac", "hoi", "nga", "nang"]);

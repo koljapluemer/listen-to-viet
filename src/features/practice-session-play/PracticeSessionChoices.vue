@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AnswerOption } from "./useListeningPracticeSession";
+import type { AnswerOption } from "./model";
 
 defineProps<{
   options: AnswerOption[];
